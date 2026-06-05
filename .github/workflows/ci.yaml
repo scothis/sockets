@@ -44,7 +44,7 @@ jobs:
       working-directory: ./lib
       run: |
         for component in *.wasm ; do
-          echo "::group::${component}"
+          echo "::group::${component} ($(du -h ${component} | cut -f1 ))"
             wasm-tools component wit "${component}"
           echo "::endgroup::"
         done
@@ -52,7 +52,7 @@ jobs:
       run: make test
 
   publish:
-    if: github.event_name == 'push' && ( startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/tags/main' )
+    if: github.event_name == 'push' && ( startsWith(github.ref, 'refs/tags/v') || github.ref == 'refs/heads/main' )
     needs:
     - build
     permissions:
@@ -91,7 +91,7 @@ jobs:
       run: make publish
       env:
         REPOSITORY: "ghcr.io/${{ github.repository }}"
-        VERSION: "${{ case(github.ref == 'refs/tags/main', 'dev', steps.get_version.outputs.VERSION) }}"
+        VERSION: "${{ case(github.ref == 'refs/heads/main', 'dev', steps.get_version.outputs.VERSION) }}"
     - name: Draft GitHub Release
       if: startsWith(github.ref, 'refs/tags/')
       uses: softprops/action-gh-release@v3
