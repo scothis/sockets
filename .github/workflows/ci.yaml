@@ -67,8 +67,6 @@ jobs:
       uses: cargo-bins/cargo-binstall@main
     - name: Install wkg
       run: cargo binstall --force wkg
-    - name: Install crane
-      uses: reconcilerio/install-crane-action@v1
     - name: Install cosign
       uses: sigstore/cosign-installer@v4.1.2
     - name: Get tag version
