@@ -1,0 +1,5 @@
+package componentized:sockets;
+
+export new componentized:gate-ip-name-lookup { ... }...;
+export new componentized:gate-tcp { ... }...;
+export new componentized:gate-udp { ... }...;

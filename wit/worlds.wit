@@ -1,0 +1,43 @@
+package componentized:sockets;
+
+world ip-name-lookup {
+    import latch;
+    import wasi:config/store@0.2.0-rc.1;
+    import wasi:logging/logging@0.1.0-draft;
+    import wasi:sockets/ip-name-lookup@0.2.6;
+    export wasi:sockets/ip-name-lookup@0.2.6;
+}
+
+world tcp-create-socket {
+    import latch;
+    import wasi:config/store@0.2.0-rc.1;
+    import wasi:logging/logging@0.1.0-draft;
+    import wasi:sockets/tcp@0.2.6;
+    export wasi:sockets/tcp@0.2.6;
+    import wasi:sockets/tcp-create-socket@0.2.6;
+    export wasi:sockets/tcp-create-socket@0.2.6;
+}
+
+world udp-create-socket {
+    import latch;
+    import wasi:config/store@0.2.0-rc.1;
+    import wasi:logging/logging@0.1.0-draft;
+    import wasi:sockets/udp@0.2.6;
+    export wasi:sockets/udp@0.2.6;
+    import wasi:sockets/udp-create-socket@0.2.6;
+    export wasi:sockets/udp-create-socket@0.2.6;
+}
+
+world sockets-latch {
+    import wasi:config/store@0.2.0-rc.1;
+    import latch;
+    export latch;
+}
+
+world sockets-latch-n {
+    export latch;
+    import latch1;
+    import latch2;
+    import latch3;
+    import latch4;
+}

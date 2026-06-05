@@ -1,0 +1,13 @@
+[workspace]
+resolver = "2"
+members = [
+    "components/*",
+    "crates/*",
+]
+exclude = [
+    "components/gate"
+]
+
+[workspace.dependencies]
+latch-n = { path = "./crates/latch-n" }
+wit-bindgen = "0.57.1"

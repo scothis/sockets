@@ -1,0 +1,124 @@
+
+interface latch {
+    use wasi:sockets/network@0.2.6.{error-code, ip-address, ip-address-family, ip-socket-address, network};
+    use wasi:sockets/ip-name-lookup@0.2.6.{resolve-address-stream};
+    use wasi:sockets/tcp@0.2.6.{tcp-socket};
+    use wasi:sockets/udp@0.2.6.{incoming-datagram, udp-socket};
+
+    record resolve-addresses-args {
+        network: borrow<network>,
+        name: string,
+    }
+
+    record resolve-next-address-entry-args {
+        ip-address: ip-address,
+    }
+
+    record create-tcp-socket-args {
+        address-family: ip-address-family,
+    }
+
+    record create-udp-socket-args {
+        address-family: ip-address-family,
+    }
+
+    record receive-incoming-datagram-args {
+        remote-address: ip-socket-address,
+        data-length: u64,
+    }
+
+    record send-outgoing-datagram-args {
+        remote-address: option<ip-socket-address>,
+        data-length: u64,
+    }
+
+    record start-bind-args {
+        network: borrow<network>,
+        local-address: ip-socket-address,
+    }
+
+    record start-connect-args {
+        network: borrow<network>,
+        remote-address: ip-socket-address,
+    }
+
+    record stream-args {
+        remote-address: option<ip-socket-address>,
+    }
+
+    variant ip-name-lookup-operation {
+        resolve-addresses(resolve-addresses-args),
+    }
+
+    variant resolve-address-stream-operation {
+        resolve-next-address-entry(resolve-next-address-entry-args),
+    }
+
+    variant tcp-create-socket-operation {
+        create-tcp-socket(create-tcp-socket-args),
+    }
+
+    variant tcp-socket-operation {
+        start-bind(start-bind-args),
+        start-connect(start-connect-args),
+    }
+
+    variant udp-create-socket-operation {
+        create-udp-socket(create-udp-socket-args),
+    }
+
+    variant incoming-datagram-operation {
+        receive-incoming-datagram(receive-incoming-datagram-args),
+    }
+
+    variant outgoing-datagram-operation {
+        send-outgoing-datagram(send-outgoing-datagram-args),
+    }
+
+    variant udp-socket-operation {
+        start-bind(start-bind-args),
+        %stream(stream-args),
+    }
+
+    variant operation {
+        ip-name-lookup(ip-name-lookup-operation),
+        resolve-address-stream(tuple<borrow<resolve-address-stream>, string, resolve-address-stream-operation>),
+        tcp-create-socket(tcp-create-socket-operation),
+        tcp-socket(tuple<borrow<tcp-socket>, tcp-socket-operation>),
+        udp-create-socket(udp-create-socket-operation),
+        udp-socket(tuple<borrow<udp-socket>, udp-socket-operation>),
+        udp-stream-incoming-datagram(incoming-datagram-operation),
+        udp-stream-outgoing-datagram(outgoing-datagram-operation),
+    }
+
+    variant decision {
+        permitted,
+        denied(error-code),
+    }
+
+    authorize: func(operation: operation) -> option<decision>;
+}
+
+interface latch1 {
+    use latch.{operation, decision};
+
+    authorize: func(operation: operation) -> option<decision>;
+}
+
+interface latch2 {
+    use latch.{operation, decision};
+
+    authorize: func(operation: operation) -> option<decision>;
+}
+
+interface latch3 {
+    use latch.{operation, decision};
+
+    authorize: func(operation: operation) -> option<decision>;
+}
+
+interface latch4 {
+    use latch.{operation, decision};
+
+    authorize: func(operation: operation) -> option<decision>;
+}
