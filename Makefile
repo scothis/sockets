@@ -80,7 +80,7 @@ endif
 	@$(eval REVISION := $(shell git rev-parse HEAD)$(shell git diff --quiet HEAD && echo "+dirty"))
 	@$(eval TAG := $(shell echo "${VERSION}" | sed 's/[^a-zA-Z0-9_.\-]/--/g'))
 
-	@echo "Publishing ${FILE} to ${REPOSITORY}/${COMPONENT}:${TAG}"
+	@echo "::group::${FILE} -> ${REPOSITORY}/${COMPONENT}:${TAG}"
 	@DIGEST=$$( \
 		wkg oci push \
 			--annotation "org.opencontainers.image.title=${COMPONENT}" \
@@ -96,3 +96,4 @@ endif
 			| grep -o 'sha256:[a-f0-9]\{64\}' \
 	) ; \
 	cosign sign --yes "${REPOSITORY}/${COMPONENT}:${TAG}@$${DIGEST}"
+	@echo "::endgroup::"
