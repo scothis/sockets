@@ -91,10 +91,10 @@ endif
 			"${REPOSITORY}/${COMPONENT}:${TAG}" \
 			"lib/${FILE}" \
 			2>&1 \
-			| tee /dev/tty \
+			| tee /dev/stderr \
 			| grep -oE "sha256:[a-f0-9]{64}" \
 			| head -n1 \
 	))
 
 	cosign sign --yes \
-		"${REPOSITORY}/${COMPONENT}:${TAG}@${DIGEST}")"
+		"${REPOSITORY}/${COMPONENT}:${TAG}@${DIGEST}"
