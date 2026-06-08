@@ -1,34 +1,31 @@
 #![no_main]
 
-use crate::{
-    exports::componentized::sockets::latch::{
-        Decision, Guest as Latch, Operation, TcpSocketOperation, UdpSocketOperation,
-    },
-    wasi::sockets::network::ErrorCode,
+use crate::exports::componentized::sockets::latch::{
+    Decision, ErrorCode, Guest as Latch, Operation, TcpSocketOperation, UdpSocketOperation,
 };
 
-struct DenyConnectLatch {}
+struct DenyBindLatch {}
 
-impl Latch for DenyConnectLatch {
+impl Latch for DenyBindLatch {
     fn authorize(operation: Operation) -> Option<Decision> {
         match operation {
             Operation::IpNameLookup(_) => None,
-            Operation::ResolveAddressStream(_) => None,
-            Operation::TcpCreateSocket(_) => None,
-            Operation::TcpSocket((_, tcp_socket_operation)) => match tcp_socket_operation {
-                TcpSocketOperation::StartBind(_) => Some(Decision::Denied(ErrorCode::NotSupported)),
-                TcpSocketOperation::StartConnect(_) => None,
+            Operation::TcpSocket(tcp_socket_operation) => match tcp_socket_operation {
+                TcpSocketOperation::Create(_) => todo!(),
+                TcpSocketOperation::Bind(_) => Some(Decision::Denied(ErrorCode::AccessDenied)),
+                TcpSocketOperation::Connect(_) => None,
+                TcpSocketOperation::Listen(_) => todo!(),
+                TcpSocketOperation::ListenConnection(_) => todo!(),
+                TcpSocketOperation::Send(_) => todo!(),
+                TcpSocketOperation::Receive(_) => todo!(),
             },
-            Operation::UdpCreateSocket(_) => None,
-            Operation::UdpSocket((_, udp_socket_operation)) => match udp_socket_operation {
-                UdpSocketOperation::StartBind(_) => Some(Decision::Denied(ErrorCode::NotSupported)),
-                UdpSocketOperation::Stream(stream_args) => match stream_args.remote_address {
-                    Some(_) => None,
-                    None => Some(Decision::Denied(ErrorCode::NotSupported)),
-                },
+            Operation::UdpSocket(udp_socket_operation) => match udp_socket_operation {
+                UdpSocketOperation::Create(_) => None,
+                UdpSocketOperation::Bind(_) => Some(Decision::Denied(ErrorCode::AccessDenied)),
+                UdpSocketOperation::Connect(_) => None,
+                UdpSocketOperation::Send(_) => None,
+                UdpSocketOperation::Receive(_) => None,
             },
-            Operation::UdpStreamIncomingDatagram(_) => None,
-            Operation::UdpStreamOutgoingDatagram(_) => None,
         }
     }
 }
@@ -39,4 +36,4 @@ wit_bindgen::generate!({
     generate_all
 });
 
-export!(DenyConnectLatch);
+export!(DenyBindLatch);

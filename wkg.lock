@@ -19,12 +19,3 @@ registry = "wasi.dev"
 requirement = "=0.1.0-draft"
 version = "0.1.0-draft"
 digest = "sha256:09621a45b12b0a9cddc798517f778aac0e5ae4bd234077b3d70758d6cf625580"
-
-[[packages]]
-name = "wasi:sockets"
-registry = "wasi.dev"
-
-[[packages.versions]]
-requirement = "=0.2.6"
-version = "0.2.6"
-digest = "sha256:f3e112b5a7926758b82cfc884b5febfce8b924cda766dbdc1f4f60893f59b301"

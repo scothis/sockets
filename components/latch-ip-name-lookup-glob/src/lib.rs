@@ -1,14 +1,10 @@
 #![no_main]
 
+use path_matchers::{glob, PathMatcher};
 use std::path::Path;
 
-use path_matchers::{glob, PathMatcher};
-
-use crate::{
-    exports::componentized::sockets::latch::{
-        Decision, Guest as Latch, IpNameLookupOperation, Operation,
-    },
-    wasi::sockets::network::ErrorCode,
+use crate::exports::componentized::sockets::latch::{
+    Decision, ErrorCode, Guest as Latch, IpNameLookupOperation, Operation,
 };
 
 struct GlobIpNameLookupLatch {}
@@ -46,11 +42,11 @@ impl Patterns {
             } else if key == "reason" {
                 reason = get_error_code(value).unwrap_or(ErrorCode::AccessDenied);
                 if let Some(Decision::Denied(_)) = default {
-                    default = Some(Decision::Denied(reason))
+                    default = Some(Decision::Denied(reason.clone()))
                 }
             } else if key == "default" {
                 default = match value.as_str() {
-                    "deny" => Some(Decision::Denied(reason)),
+                    "deny" => Some(Decision::Denied(reason.clone())),
                     "permit" => Some(Decision::Permitted),
                     _ => None,
                 }
@@ -72,7 +68,7 @@ impl Patterns {
         if decision.is_some() {
             return decision;
         }
-        unsafe { STATE.default }
+        unsafe { STATE.default.clone() }
     }
 
     fn authorize_name(&self, name: String) -> Option<Decision> {
@@ -81,7 +77,7 @@ impl Patterns {
 
         for deny in self.denies.as_ref().unwrap() {
             if deny.matches(name) {
-                return Some(Decision::Denied(self.deny_reason.unwrap()));
+                return Some(Decision::Denied(self.deny_reason.clone().unwrap()));
             }
         }
         for permit in self.permits.as_ref().unwrap() {
@@ -110,6 +106,7 @@ impl Latch for GlobIpNameLookupLatch {
                 IpNameLookupOperation::ResolveAddresses(resolve_addresses_args) => {
                     Patterns::authorize(resolve_addresses_args.name)
                 }
+                IpNameLookupOperation::ResolveAddressesReturn(_) => None,
             },
             _ => None,
         }
@@ -118,28 +115,11 @@ impl Latch for GlobIpNameLookupLatch {
 
 fn get_error_code(value: String) -> Option<ErrorCode> {
     match value.as_str() {
-        "unknown" => Some(ErrorCode::Unknown),
+        "" => None,
         "access-denied" => Some(ErrorCode::AccessDenied),
-        "not-supported" => Some(ErrorCode::NotSupported),
         "invalid-argument" => Some(ErrorCode::InvalidArgument),
-        "out-of-memory" => Some(ErrorCode::OutOfMemory),
-        "timeout" => Some(ErrorCode::Timeout),
-        "concurrency-conflict" => Some(ErrorCode::ConcurrencyConflict),
-        "not-in-progress" => Some(ErrorCode::NotInProgress),
-        "would-block" => Some(ErrorCode::WouldBlock),
-        "invalid-state" => Some(ErrorCode::InvalidState),
-        "new-socket-limit" => Some(ErrorCode::NewSocketLimit),
-        "address-not-bindable" => Some(ErrorCode::AddressNotBindable),
-        "address-in-use" => Some(ErrorCode::AddressInUse),
-        "remote-unreachable" => Some(ErrorCode::RemoteUnreachable),
-        "connection-refused" => Some(ErrorCode::ConnectionRefused),
-        "connection-reset" => Some(ErrorCode::ConnectionReset),
-        "connection-aborted" => Some(ErrorCode::ConnectionAborted),
-        "datagram-too-large" => Some(ErrorCode::DatagramTooLarge),
-        "name-unresolvable" => Some(ErrorCode::NameUnresolvable),
-        "temporary-resolver-failure" => Some(ErrorCode::TemporaryResolverFailure),
-        "permanentresolver-failure" => Some(ErrorCode::PermanentResolverFailure),
-        _ => None,
+        "other" => Some(ErrorCode::Other(None)),
+        _ => Some(ErrorCode::Other(Some(value))),
     }
 }
 

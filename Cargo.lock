@@ -30,20 +30,11 @@ checksum = "77ce24cb58228fbb8aa041425bb1050850ac19177686ea6e0f41a70416f56fdb"
 name = "gate-ip-name-lookup"
 version = "0.1.0"
 dependencies = [
- "heck",
  "wit-bindgen",
 ]
 
 [[package]]
-name = "gate-tcp"
-version = "0.1.0"
-dependencies = [
- "heck",
- "wit-bindgen",
-]
-
-[[package]]
-name = "gate-udp"
+name = "gate-types"
 version = "0.1.0"
 dependencies = [
  "heck",
@@ -134,6 +125,7 @@ dependencies = [
 name = "latch-deny-ipv4"
 version = "0.1.0"
 dependencies = [
+ "heck",
  "wit-bindgen",
 ]
 
@@ -141,6 +133,7 @@ dependencies = [
 name = "latch-deny-ipv6"
 version = "0.1.0"
 dependencies = [
+ "heck",
  "wit-bindgen",
 ]
 

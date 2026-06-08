@@ -6,14 +6,12 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::componentized::sockets::latch;
 use crate::exports::componentized::sockets::latch::{
-    CreateTcpSocketArgs, CreateUdpSocketArgs, Decision, ErrorCode, Guest as Latch,
-    IncomingDatagramOperation, IpNameLookupOperation, Operation, OutgoingDatagramOperation,
-    ReceiveIncomingDatagramArgs, ResolveAddressStreamOperation, ResolveAddressesArgs,
-    ResolveNextAddressEntryArgs, SendOutgoingDatagramArgs, StartBindArgs, StartConnectArgs,
-    StreamArgs, TcpCreateSocketOperation, TcpSocketOperation, UdpCreateSocketOperation,
-    UdpSocketOperation,
+    Decision, ErrorCode, Guest as Latch, IpAddress, IpNameLookupOperation, IpSocketAddress,
+    Operation, ResolveAddressesArgs, ResolveAddressesReturnsItem, TcpSocketBindArgs,
+    TcpSocketConnectArgs, TcpSocketCreateArgs, TcpSocketOperation, UdpSocketBindArgs,
+    UdpSocketConnectArgs, UdpSocketCreateArgs, UdpSocketOperation, UdpSocketReceiveReturns,
+    UdpSocketSendArgs,
 };
-use crate::wasi::sockets::network::{IpAddress, IpSocketAddress};
 
 struct State {
     permitted_addresses: Mutex<HashSet<IpAddress>>,
@@ -57,50 +55,41 @@ struct ConnectToLookedUpAddressLatch {}
 
 impl Latch for ConnectToLookedUpAddressLatch {
     fn authorize(operation: Operation) -> Option<Decision> {
-        let operation = operation_map(operation);
+        let operation = operation.into();
         let decision = match latch::authorize(&operation) {
             Some(latch::Decision::Permitted) => Some(Decision::Permitted),
-            Some(latch::Decision::Denied(error_code)) => Some(Decision::Denied(error_code)),
+            Some(latch::Decision::Denied(error_code)) => Some(Decision::Denied(error_code.into())),
             None => match &operation {
                 latch::Operation::IpNameLookup(_) => None,
-                latch::Operation::ResolveAddressStream(_) => None,
-                latch::Operation::TcpCreateSocket(_) => None,
-                latch::Operation::TcpSocket((_, tcp_socket_operation)) => {
-                    match tcp_socket_operation {
-                        latch::TcpSocketOperation::StartBind(_) => None,
-                        latch::TcpSocketOperation::StartConnect(start_connect_args) => {
-                            match State::is_permitted_socket_address(
-                                start_connect_args.remote_address,
-                            ) {
-                                true => None,
-                                false => Some(Decision::Denied(ErrorCode::AccessDenied)),
-                            }
+                latch::Operation::TcpSocket(tcp_socket_operation) => match tcp_socket_operation {
+                    latch::TcpSocketOperation::Create(_) => None,
+                    latch::TcpSocketOperation::Bind(_) => None,
+                    latch::TcpSocketOperation::Connect((_, tcp_socket_connect_args)) => {
+                        match State::is_permitted_socket_address(
+                            tcp_socket_connect_args.remote_address,
+                        ) {
+                            true => None,
+                            false => Some(Decision::Denied(ErrorCode::AccessDenied)),
                         }
                     }
-                }
-                latch::Operation::UdpCreateSocket(_) => None,
-                latch::Operation::UdpSocket((_, udp_socket_operation)) => {
-                    match udp_socket_operation {
-                        latch::UdpSocketOperation::StartBind(_) => None,
-                        latch::UdpSocketOperation::Stream(stream_args) => {
-                            match stream_args.remote_address {
-                                Some(remote_address) => {
-                                    match State::is_permitted_socket_address(remote_address) {
-                                        true => None,
-                                        false => Some(Decision::Denied(ErrorCode::AccessDenied)),
-                                    }
-                                }
-                                None => None,
-                            }
+                    latch::TcpSocketOperation::Listen(_) => None,
+                    latch::TcpSocketOperation::ListenConnection(_) => None,
+                    latch::TcpSocketOperation::Send(_) => None,
+                    latch::TcpSocketOperation::Receive(_) => None,
+                },
+                latch::Operation::UdpSocket(udp_socket_operation) => match udp_socket_operation {
+                    latch::UdpSocketOperation::Create(_) => None,
+                    latch::UdpSocketOperation::Bind(_) => None,
+                    latch::UdpSocketOperation::Connect((_, udp_socket_connect_args)) => {
+                        match State::is_permitted_socket_address(
+                            udp_socket_connect_args.remote_address,
+                        ) {
+                            true => None,
+                            false => Some(Decision::Denied(ErrorCode::AccessDenied)),
                         }
                     }
-                }
-                latch::Operation::UdpStreamIncomingDatagram(_) => None,
-                latch::Operation::UdpStreamOutgoingDatagram(outgoing_datagram_operation) => {
-                    match outgoing_datagram_operation {
-                        latch::OutgoingDatagramOperation::SendOutgoingDatagram(
-                            send_outgoing_datagram_args,
-                        ) => match send_outgoing_datagram_args.remote_address {
+                    latch::UdpSocketOperation::Send((_, udp_socket_send_args)) => {
+                        match udp_socket_send_args.remote_address {
                             Some(remote_address) => {
                                 match State::is_permitted_socket_address(remote_address) {
                                     true => None,
@@ -108,20 +97,19 @@ impl Latch for ConnectToLookedUpAddressLatch {
                                 }
                             }
                             None => None,
-                        },
+                        }
                     }
-                }
+                    latch::UdpSocketOperation::Receive(_) => None,
+                },
             },
         };
 
         if !matches!(decision, Some(Decision::Denied(_))) {
-            if let latch::Operation::ResolveAddressStream((
-                _,
-                _,
-                latch::ResolveAddressStreamOperation::ResolveNextAddressEntry(
-                    latch::ResolveNextAddressEntryArgs { ip_address },
+            if let latch::Operation::IpNameLookup(
+                latch::IpNameLookupOperation::ResolveAddressesReturn(
+                    latch::ResolveAddressesReturnsItem { ip_address },
                 ),
-            )) = operation
+            ) = operation
             {
                 State::permit_ip_address(ip_address)
             }
@@ -131,207 +119,174 @@ impl Latch for ConnectToLookedUpAddressLatch {
     }
 }
 
-fn operation_map(operation: Operation) -> latch::Operation {
-    match operation {
-        Operation::IpNameLookup(ip_name_lookup_operation) => {
-            latch::Operation::IpNameLookup(ip_name_lookup_operation_map(ip_name_lookup_operation))
-        }
-        Operation::ResolveAddressStream((
-            resolve_address_stream,
-            name,
-            resolve_address_stream_operation,
-        )) => latch::Operation::ResolveAddressStream((
-            resolve_address_stream,
-            name,
-            resolve_address_stream_operation_map(resolve_address_stream_operation),
-        )),
-        Operation::TcpCreateSocket(tcp_create_socket_operation) => {
-            latch::Operation::TcpCreateSocket(tcp_create_socket_operation_map(
-                tcp_create_socket_operation,
-            ))
-        }
-        Operation::TcpSocket((tcp_socket, tcp_socket_operation)) => latch::Operation::TcpSocket((
-            tcp_socket,
-            tcp_socket_operation_map(tcp_socket_operation),
-        )),
-        Operation::UdpCreateSocket(udp_create_socket_operation) => {
-            latch::Operation::UdpCreateSocket(udp_create_socket_operation_map(
-                udp_create_socket_operation,
-            ))
-        }
-        Operation::UdpSocket((udp_socket, udp_socket_operation)) => latch::Operation::UdpSocket((
-            udp_socket,
-            udp_socket_operation_map(udp_socket_operation),
-        )),
-        Operation::UdpStreamIncomingDatagram(incoming_datagram_operation) => {
-            latch::Operation::UdpStreamIncomingDatagram(incoming_datagram_operation_map(
-                incoming_datagram_operation,
-            ))
-        }
-        Operation::UdpStreamOutgoingDatagram(outgoing_datagram_operation) => {
-            latch::Operation::UdpStreamOutgoingDatagram(outgoing_datagram_operation_map(
-                outgoing_datagram_operation,
-            ))
+impl<'a> From<Operation<'a>> for latch::Operation<'a> {
+    fn from(operation: Operation<'a>) -> Self {
+        match operation {
+            Operation::IpNameLookup(ip_name_lookup_operation) => {
+                latch::Operation::IpNameLookup(ip_name_lookup_operation.into())
+            }
+            Operation::TcpSocket(tcp_socket_operation) => {
+                latch::Operation::TcpSocket(tcp_socket_operation.into())
+            }
+            Operation::UdpSocket(udp_socket_operation) => {
+                latch::Operation::UdpSocket(udp_socket_operation.into())
+            }
         }
     }
 }
 
-fn ip_name_lookup_operation_map(
-    ip_name_lookup_operation: IpNameLookupOperation,
-) -> latch::IpNameLookupOperation {
-    match ip_name_lookup_operation {
-        IpNameLookupOperation::ResolveAddresses(resolve_addresses_args) => {
-            latch::IpNameLookupOperation::ResolveAddresses(resolve_addresses_args_map(
-                resolve_addresses_args,
-            ))
+impl From<IpNameLookupOperation> for latch::IpNameLookupOperation {
+    fn from(operation: IpNameLookupOperation) -> Self {
+        match operation {
+            IpNameLookupOperation::ResolveAddresses(resolve_addresses_args) => {
+                latch::IpNameLookupOperation::ResolveAddresses(resolve_addresses_args.into())
+            }
+            IpNameLookupOperation::ResolveAddressesReturn(resolve_addresses_returns_item) => {
+                latch::IpNameLookupOperation::ResolveAddressesReturn(
+                    resolve_addresses_returns_item.into(),
+                )
+            }
         }
     }
 }
 
-fn resolve_addresses_args_map(args: ResolveAddressesArgs) -> latch::ResolveAddressesArgs {
-    latch::ResolveAddressesArgs {
-        network: args.network,
-        name: args.name,
-    }
-}
-
-fn resolve_address_stream_operation_map(
-    resolve_address_stream_operation: ResolveAddressStreamOperation,
-) -> latch::ResolveAddressStreamOperation {
-    match resolve_address_stream_operation {
-        ResolveAddressStreamOperation::ResolveNextAddressEntry(resolve_next_address_entry_args) => {
-            latch::ResolveAddressStreamOperation::ResolveNextAddressEntry(
-                resolve_next_address_entry_args_map(resolve_next_address_entry_args),
-            )
+impl<'a> From<TcpSocketOperation<'a>> for latch::TcpSocketOperation<'a> {
+    fn from(operation: TcpSocketOperation<'a>) -> Self {
+        match operation {
+            TcpSocketOperation::Create(tcp_socket_create_args) => {
+                latch::TcpSocketOperation::Create(tcp_socket_create_args.into())
+            }
+            TcpSocketOperation::Bind((tcp_socket, tcp_socker_bind_args)) => {
+                latch::TcpSocketOperation::Bind((tcp_socket, tcp_socker_bind_args.into()))
+            }
+            TcpSocketOperation::Connect((tcp_socket, tcp_stocket_connect_args)) => {
+                latch::TcpSocketOperation::Connect((tcp_socket, tcp_stocket_connect_args.into()))
+            }
+            TcpSocketOperation::Listen((tcp_socket,)) => {
+                latch::TcpSocketOperation::Listen((tcp_socket,))
+            }
+            TcpSocketOperation::ListenConnection((tcp_socket,)) => {
+                latch::TcpSocketOperation::ListenConnection((tcp_socket,))
+            }
+            TcpSocketOperation::Send((tcp_socket,)) => {
+                latch::TcpSocketOperation::Send((tcp_socket,))
+            }
+            TcpSocketOperation::Receive((tcp_socket,)) => {
+                latch::TcpSocketOperation::Receive((tcp_socket,))
+            }
         }
     }
 }
 
-fn resolve_next_address_entry_args_map(
-    args: ResolveNextAddressEntryArgs,
-) -> latch::ResolveNextAddressEntryArgs {
-    latch::ResolveNextAddressEntryArgs {
-        ip_address: args.ip_address,
-    }
-}
-
-fn tcp_create_socket_operation_map(
-    tcp_create_socket_operation: TcpCreateSocketOperation,
-) -> latch::TcpCreateSocketOperation {
-    match tcp_create_socket_operation {
-        TcpCreateSocketOperation::CreateTcpSocket(create_tcp_socket_args) => {
-            latch::TcpCreateSocketOperation::CreateTcpSocket(create_tcp_socket_args_map(
-                create_tcp_socket_args,
-            ))
+impl<'a> From<UdpSocketOperation<'a>> for latch::UdpSocketOperation<'a> {
+    fn from(operation: UdpSocketOperation<'a>) -> Self {
+        match operation {
+            UdpSocketOperation::Create(udp_socket_create_args) => {
+                latch::UdpSocketOperation::Create(udp_socket_create_args.into())
+            }
+            UdpSocketOperation::Bind((udp_socket, udp_socket_bind_args)) => {
+                latch::UdpSocketOperation::Bind((udp_socket, udp_socket_bind_args.into()))
+            }
+            UdpSocketOperation::Connect((udp_socket, udp_socket_connect_args)) => {
+                latch::UdpSocketOperation::Connect((udp_socket, udp_socket_connect_args.into()))
+            }
+            UdpSocketOperation::Send((udp_socket, udp_socket_send_args)) => {
+                latch::UdpSocketOperation::Send((udp_socket, udp_socket_send_args.into()))
+            }
+            UdpSocketOperation::Receive((udp_socket, udp_socket_receive_args)) => {
+                latch::UdpSocketOperation::Receive((udp_socket, udp_socket_receive_args.into()))
+            }
         }
     }
 }
 
-fn create_tcp_socket_args_map(args: CreateTcpSocketArgs) -> latch::CreateTcpSocketArgs {
-    latch::CreateTcpSocketArgs {
-        address_family: args.address_family,
+impl From<ResolveAddressesArgs> for latch::ResolveAddressesArgs {
+    fn from(args: ResolveAddressesArgs) -> Self {
+        Self { name: args.name }
     }
 }
 
-fn tcp_socket_operation_map(tcp_socket_operation: TcpSocketOperation) -> latch::TcpSocketOperation {
-    match tcp_socket_operation {
-        TcpSocketOperation::StartBind(start_bind_args) => {
-            latch::TcpSocketOperation::StartBind(start_bind_args_map(start_bind_args))
-        }
-        TcpSocketOperation::StartConnect(start_connect_args) => {
-            latch::TcpSocketOperation::StartConnect(start_connect_args_map(start_connect_args))
+impl From<ResolveAddressesReturnsItem> for latch::ResolveAddressesReturnsItem {
+    fn from(returns: ResolveAddressesReturnsItem) -> Self {
+        Self {
+            ip_address: returns.ip_address,
         }
     }
 }
 
-fn start_bind_args_map(args: StartBindArgs) -> latch::StartBindArgs {
-    latch::StartBindArgs {
-        network: args.network,
-        local_address: args.local_address,
-    }
-}
-
-fn start_connect_args_map(args: StartConnectArgs) -> latch::StartConnectArgs {
-    latch::StartConnectArgs {
-        network: args.network,
-        remote_address: args.remote_address,
-    }
-}
-
-fn udp_create_socket_operation_map(
-    udp_create_socket_operation: UdpCreateSocketOperation,
-) -> latch::UdpCreateSocketOperation {
-    match udp_create_socket_operation {
-        UdpCreateSocketOperation::CreateUdpSocket(create_udp_socket_args) => {
-            latch::UdpCreateSocketOperation::CreateUdpSocket(create_udp_socket_args_map(
-                create_udp_socket_args,
-            ))
+impl From<TcpSocketCreateArgs> for latch::TcpSocketCreateArgs {
+    fn from(args: TcpSocketCreateArgs) -> Self {
+        Self {
+            address_family: args.address_family,
         }
     }
 }
 
-fn create_udp_socket_args_map(args: CreateUdpSocketArgs) -> latch::CreateUdpSocketArgs {
-    latch::CreateUdpSocketArgs {
-        address_family: args.address_family,
-    }
-}
-
-fn udp_socket_operation_map(udp_socket_operation: UdpSocketOperation) -> latch::UdpSocketOperation {
-    match udp_socket_operation {
-        UdpSocketOperation::StartBind(start_bind_args) => {
-            latch::UdpSocketOperation::StartBind(start_bind_args_map(start_bind_args))
-        }
-        UdpSocketOperation::Stream(stream_args) => {
-            latch::UdpSocketOperation::Stream(stream_args_map(stream_args))
+impl From<TcpSocketBindArgs> for latch::TcpSocketBindArgs {
+    fn from(args: TcpSocketBindArgs) -> Self {
+        Self {
+            local_address: args.local_address,
         }
     }
 }
 
-fn stream_args_map(args: StreamArgs) -> latch::StreamArgs {
-    latch::StreamArgs {
-        remote_address: args.remote_address,
-    }
-}
-
-fn incoming_datagram_operation_map(
-    incoming_datagram_operation: IncomingDatagramOperation,
-) -> latch::IncomingDatagramOperation {
-    match incoming_datagram_operation {
-        IncomingDatagramOperation::ReceiveIncomingDatagram(receive_incoming_datagram_args) => {
-            latch::IncomingDatagramOperation::ReceiveIncomingDatagram(
-                receive_incoming_datagram_args_map(receive_incoming_datagram_args),
-            )
+impl From<TcpSocketConnectArgs> for latch::TcpSocketConnectArgs {
+    fn from(args: TcpSocketConnectArgs) -> Self {
+        Self {
+            remote_address: args.remote_address,
         }
     }
 }
 
-fn receive_incoming_datagram_args_map(
-    args: ReceiveIncomingDatagramArgs,
-) -> latch::ReceiveIncomingDatagramArgs {
-    latch::ReceiveIncomingDatagramArgs {
-        remote_address: args.remote_address,
-        data_length: args.data_length,
-    }
-}
-
-fn outgoing_datagram_operation_map(
-    outgoing_datagram_operation: OutgoingDatagramOperation,
-) -> latch::OutgoingDatagramOperation {
-    match outgoing_datagram_operation {
-        OutgoingDatagramOperation::SendOutgoingDatagram(send_outgoing_datagram_args) => {
-            latch::OutgoingDatagramOperation::SendOutgoingDatagram(send_outgoing_datagram_args_map(
-                send_outgoing_datagram_args,
-            ))
+impl From<UdpSocketCreateArgs> for latch::UdpSocketCreateArgs {
+    fn from(args: UdpSocketCreateArgs) -> Self {
+        Self {
+            address_family: args.address_family,
         }
     }
 }
 
-fn send_outgoing_datagram_args_map(
-    args: SendOutgoingDatagramArgs,
-) -> latch::SendOutgoingDatagramArgs {
-    latch::SendOutgoingDatagramArgs {
-        remote_address: args.remote_address,
-        data_length: args.data_length,
+impl From<UdpSocketBindArgs> for latch::UdpSocketBindArgs {
+    fn from(args: UdpSocketBindArgs) -> Self {
+        Self {
+            local_address: args.local_address,
+        }
+    }
+}
+
+impl From<UdpSocketConnectArgs> for latch::UdpSocketConnectArgs {
+    fn from(args: UdpSocketConnectArgs) -> Self {
+        Self {
+            remote_address: args.remote_address,
+        }
+    }
+}
+
+impl From<UdpSocketReceiveReturns> for latch::UdpSocketReceiveReturns {
+    fn from(returns: UdpSocketReceiveReturns) -> Self {
+        Self {
+            data_length: returns.data_length,
+            remote_address: returns.remote_address,
+        }
+    }
+}
+
+impl From<UdpSocketSendArgs> for latch::UdpSocketSendArgs {
+    fn from(args: UdpSocketSendArgs) -> Self {
+        Self {
+            data_length: args.data_length,
+            remote_address: args.remote_address,
+        }
+    }
+}
+
+impl From<latch::ErrorCode> for ErrorCode {
+    fn from(error_code: latch::ErrorCode) -> Self {
+        match error_code {
+            latch::ErrorCode::AccessDenied => ErrorCode::AccessDenied,
+            latch::ErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
+            latch::ErrorCode::Other(error) => ErrorCode::Other(error),
+        }
     }
 }
 

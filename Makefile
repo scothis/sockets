@@ -27,6 +27,8 @@ components: $(foreach component,$(COMPONENTS),lib/$(component).wasm) $(foreach c
 
 define BUILD_COMPONENT
 
+components/$1: lib/$1.wasm lib/$1.debug.wasm
+
 lib/$1.wasm: Cargo.toml Cargo.lock wit/deps $(shell find components/$1 -type f) $(shell find crates -type f)
 	cargo build -p $1 --target wasm32-unknown-unknown --release
 	wasm-tools component new target/wasm32-unknown-unknown/release/$(subst -,_,$1).wasm -o lib/$1.wasm
@@ -41,21 +43,22 @@ endef
 
 $(foreach component,$(COMPONENTS),$(eval $(call BUILD_COMPONENT,$(component))))
 
-lib/gate.wasm: components/gate/gate.wac lib/gate-ip-name-lookup.wasm lib/gate-tcp.wasm lib/gate-udp.wasm components/gate/README.md
-	wac compose components/gate/gate.wac \
-		-d componentized:gate-ip-name-lookup=lib/gate-ip-name-lookup.wasm \
-		-d componentized:gate-tcp=lib/gate-tcp.wasm \
-		-d componentized:gate-udp=lib/gate-udp.wasm \
-		-o lib/gate.wasm
-	cp components/gate/README.md lib/gate.wasm.md
+# TODO enable once a p3 enabled wac is available
+# components/gate: lib/gate.wasm lib/gate.debug.wasm
 
-lib/gate.debug.wasm: components/gate/gate.wac lib/gate-ip-name-lookup.debug.wasm lib/gate-tcp.debug.wasm lib/gate-udp.debug.wasm components/gate/README.md
-	wac compose components/gate/gate.wac \
-		-d componentized:gate-ip-name-lookup=lib/gate-ip-name-lookup.debug.wasm \
-		-d componentized:gate-tcp=lib/gate-tcp.debug.wasm \
-		-d componentized:gate-udp=lib/gate-udp.debug.wasm \
-		-o lib/gate.debug.wasm
-	cp components/gate/README.md lib/gate.debug.wasm.md
+# lib/gate.wasm: components/gate/gate.wac lib/gate-ip-name-lookup.wasm lib/gate-types.wasm components/gate/README.md
+# 	wac compose components/gate/gate.wac \
+# 		-d componentized:gate-ip-name-lookup=lib/gate-ip-name-lookup.wasm \
+# 		-d componentized:gate-types=lib/gate-types.wasm \
+# 		-o lib/gate.wasm
+# 	cp components/gate/README.md lib/gate.wasm.md
+
+# lib/gate.debug.wasm: components/gate/gate.wac lib/gate-ip-name-lookup.debug.wasm lib/gate-types.debug.wasm components/gate/README.md
+# 	wac compose components/gate/gate.wac \
+# 		-d componentized:gate-ip-name-lookup=lib/gate-ip-name-lookup.debug.wasm \
+# 		-d componentized:gate-types=lib/gate-types.debug.wasm \
+# 		-o lib/gate.debug.wasm
+# 	cp components/gate/README.md lib/gate.debug.wasm.md
 
 .PHONY: wit
 wit: wit/deps
