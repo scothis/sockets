@@ -43,22 +43,21 @@ endef
 
 $(foreach component,$(COMPONENTS),$(eval $(call BUILD_COMPONENT,$(component))))
 
-# TODO enable once a p3 enabled wac is available
-# components/gate: lib/gate.wasm lib/gate.debug.wasm
+components/gate: lib/gate.wasm lib/gate.debug.wasm
 
-# lib/gate.wasm: components/gate/gate.wac lib/gate-ip-name-lookup.wasm lib/gate-types.wasm components/gate/README.md
-# 	wac compose components/gate/gate.wac \
-# 		-d componentized:gate-ip-name-lookup=lib/gate-ip-name-lookup.wasm \
-# 		-d componentized:gate-types=lib/gate-types.wasm \
-# 		-o lib/gate.wasm
-# 	cp components/gate/README.md lib/gate.wasm.md
+lib/gate.wasm: components/gate/gate.wac lib/gate-ip-name-lookup.wasm lib/gate-types.wasm components/gate/README.md
+	wac compose components/gate/gate.wac \
+		-d componentized:gate-ip-name-lookup=lib/gate-ip-name-lookup.wasm \
+		-d componentized:gate-types=lib/gate-types.wasm \
+		-o lib/gate.wasm
+	cp components/gate/README.md lib/gate.wasm.md
 
-# lib/gate.debug.wasm: components/gate/gate.wac lib/gate-ip-name-lookup.debug.wasm lib/gate-types.debug.wasm components/gate/README.md
-# 	wac compose components/gate/gate.wac \
-# 		-d componentized:gate-ip-name-lookup=lib/gate-ip-name-lookup.debug.wasm \
-# 		-d componentized:gate-types=lib/gate-types.debug.wasm \
-# 		-o lib/gate.debug.wasm
-# 	cp components/gate/README.md lib/gate.debug.wasm.md
+lib/gate.debug.wasm: components/gate/gate.wac lib/gate-ip-name-lookup.debug.wasm lib/gate-types.debug.wasm components/gate/README.md
+	wac compose components/gate/gate.wac \
+		-d componentized:gate-ip-name-lookup=lib/gate-ip-name-lookup.debug.wasm \
+		-d componentized:gate-types=lib/gate-types.debug.wasm \
+		-o lib/gate.debug.wasm
+	cp components/gate/README.md lib/gate.debug.wasm.md
 
 .PHONY: wit
 wit: wit/deps

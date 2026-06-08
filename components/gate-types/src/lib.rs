@@ -257,9 +257,7 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=listen&sektion=2>"]
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=accept&sektion=2>"]
     #[allow(async_fn_in_trait)]
-    async fn listen(
-        &self,
-    ) -> Result<wit_bindgen::rt::async_support::StreamReader<TcpSocket>, ErrorCode> {
+    fn listen(&self) -> Result<wit_bindgen::rt::async_support::StreamReader<TcpSocket>, ErrorCode> {
         match authorize(&Operation::TcpSocket(TcpSocketOperation::Listen((
             &self.socket,
         )))) {
@@ -270,22 +268,24 @@ impl GuestTcpSocket for GatedTcpSocket {
             _ => match self.socket.listen() {
                 Ok(mut stream) => {
                     let (mut stream_writer, stream_reader) = wit_stream::new::<TcpSocket>();
-                    while let Some(socket) = stream.next().await {
-                        match authorize(&Operation::TcpSocket(
-                            TcpSocketOperation::ListenConnection((&socket,)),
-                        )) {
-                            Some(Denied(error_code)) => {
-                                trace!("Denied REASON={error_code} OPERATION=wasi:sockets/types#tcp-socket.listen.connection");
-                            }
-                            _ => {
-                                let socket = TcpSocket::new(GatedTcpSocket::new(socket));
-                                stream_writer
-                                    .write_one(socket)
-                                    .await
-                                    .expect("stream write to succeed");
+                    wit_bindgen::spawn(async move {
+                        while let Some(socket) = stream.next().await {
+                            match authorize(&Operation::TcpSocket(
+                                TcpSocketOperation::ListenConnection((&socket,)),
+                            )) {
+                                Some(Denied(error_code)) => {
+                                    trace!("Denied REASON={error_code} OPERATION=wasi:sockets/types#tcp-socket.listen.connection");
+                                }
+                                _ => {
+                                    let socket = TcpSocket::new(GatedTcpSocket::new(socket));
+                                    stream_writer
+                                        .write_one(socket)
+                                        .await
+                                        .expect("stream write to succeed");
+                                }
                             }
                         }
-                    }
+                    });
                     // TODO do we close the stream or is it dropped automatically?
                     Ok(stream_reader)
                 }
@@ -317,14 +317,17 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://learn.microsoft.com/en-us/windows/win32/api/winsock2/nf-winsock2-send>"]
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=send&sektion=2>"]
     #[allow(async_fn_in_trait)]
-    async fn send(
+    fn send(
         &self,
         data: wit_bindgen::StreamReader<u8>,
     ) -> wit_bindgen::FutureReader<Result<(), ErrorCode>> {
         let (tx, rx) = wit_future::new(|| Err(ErrorCode::Other(None)));
-        tx.write(self.socket.send(data).await.map_err(|val| val.into()))
-            .await
-            .expect("future write to succeed");
+        let send_result = self.socket.send(data);
+        wit_bindgen::spawn(async move {
+            tx.write(send_result.await.map_err(|val| val.into()))
+                .await
+                .expect("future write to succeed");
+        });
         rx
     }
 
@@ -356,7 +359,7 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://learn.microsoft.com/en-us/windows/win32/api/winsock/nf-winsock-recv>"]
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=recv&sektion=2>"]
     #[allow(async_fn_in_trait)]
-    async fn receive(
+    fn receive(
         &self,
     ) -> (
         wit_bindgen::StreamReader<u8>,
@@ -365,9 +368,11 @@ impl GuestTcpSocket for GatedTcpSocket {
         let (data, result) = self.socket.receive();
         let (tx, rx) = wit_future::new(|| Err(ErrorCode::Other(None)));
 
-        tx.write(result.await.map_err(|val| val.into()))
-            .await
-            .expect("future write to succeed");
+        wit_bindgen::spawn(async move {
+            tx.write(result.await.map_err(|val| val.into()))
+                .await
+                .expect("future write to succeed");
+        });
 
         (data, rx)
     }
@@ -1139,11 +1144,6 @@ pub mod bindgen_hacks;
 wit_bindgen::generate!({
     path: "../../wit",
     world: "gated-types",
-    async: [
-        "export:wasi:sockets/types@0.3.0-rc-2026-03-15#[method]tcp-socket.listen",
-        "export:wasi:sockets/types@0.3.0-rc-2026-03-15#[method]tcp-socket.send",
-        "export:wasi:sockets/types@0.3.0-rc-2026-03-15#[method]tcp-socket.receive",
-    ],
     generate_all
 });
 

@@ -11,4 +11,4 @@ exclude = [
 [workspace.dependencies]
 heck = "0.5"
 latch-n = { path = "./crates/latch-n" }
-wit-bindgen = { version = "0.57.1" }
+wit-bindgen = { version = "0.57.1", features = ["async-spawn"] }
