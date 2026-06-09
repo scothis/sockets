@@ -10,4 +10,4 @@ exclude = [
 
 [workspace.dependencies]
 latch-n = { path = "./crates/latch-n" }
-wit-bindgen = "0.57.1"
+wit-bindgen = "0.58.0"
