@@ -58,7 +58,7 @@ interface latch {
 
     record udp-socket-receive-returns {
         data-length: u64,
-        remote-address: option<ip-socket-address>,
+        remote-address: ip-socket-address,
     }
 
     variant udp-socket-operation{

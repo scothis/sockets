@@ -13,6 +13,7 @@ impl Latch for PermitAllLatch {
 wit_bindgen::generate!({
     path: "../../wit",
     world: "sockets-latch",
+    merge_structurally_equal_types: true,
     generate_all
 });
 

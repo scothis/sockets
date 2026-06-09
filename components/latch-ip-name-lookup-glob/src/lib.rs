@@ -126,6 +126,7 @@ fn get_error_code(value: String) -> Option<ErrorCode> {
 wit_bindgen::generate!({
     path: "../../wit",
     world: "sockets-latch",
+    merge_structurally_equal_types: true,
     generate_all
 });
 

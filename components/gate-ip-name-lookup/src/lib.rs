@@ -1,10 +1,12 @@
 #![no_main]
 
+use std::fmt::Display;
+
 use crate::componentized::sockets::latch::{
     self, authorize, Decision::Denied, IpNameLookupOperation, Operation, ResolveAddressesArgs,
     ResolveAddressesReturnsItem,
 };
-use crate::exports::wasi::sockets::ip_name_lookup::{ErrorCode, Guest, IpAddress};
+use crate::exports::wasi::sockets::ip_name_lookup::{ErrorCode, Guest};
 use crate::wasi::logging::logging::{log, Level};
 use crate::wasi::sockets::{ip_name_lookup, types};
 
@@ -55,73 +57,59 @@ impl Guest for GatedIpNameLookup {
             IpNameLookupOperation::ResolveAddresses(ResolveAddressesArgs { name: name.clone() }),
         )) {
             Some(Denied(code)) => {
-                let reason = error_code_display(code.clone());
-                warn!("Denied REASON={reason} OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME={name}");
-                Err(latch_error_code_map(code))
+                warn!("Denied REASON={code} OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME={name}");
+                Err(code.into())
             }
             _ => ip_name_lookup::resolve_addresses(name.clone())
                 .await
-                .map_err(ip_name_lookup_error_code_map)
                 .map(|addresses| 
                     addresses
-                        .iter()
+                        .into_iter()
                         .filter(|ip_address| match authorize(
-                            &Operation::IpNameLookup(IpNameLookupOperation::ResolveAddressesReturn(ResolveAddressesReturnsItem { ip_address: **ip_address }))
+                            &Operation::IpNameLookup(IpNameLookupOperation::ResolveAddressesReturn(ResolveAddressesReturnsItem { ip_address: *ip_address }))
                         ) {
                             Some(Denied(code)) => {
-                                let reason = error_code_display(code);
-                                trace!("Denied REASON={reason} OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME={name}");
+                                trace!("Denied REASON={code} OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME={name}");
                                 false
                             }
                             _ => true,
                         })
-                        .map(|ip_address| ip_address_map(*ip_address))
                         .collect()
                 ),
         }
     }
 }
 
-fn ip_address_map(ip_address: types::IpAddress) -> IpAddress {
-    match ip_address {
-        types::IpAddress::Ipv4(v4) => IpAddress::Ipv4(v4),
-        types::IpAddress::Ipv6(v6) => IpAddress::Ipv6(v6),
+impl From<latch::ErrorCode> for ErrorCode {
+    fn from(value: latch::ErrorCode) -> Self {
+        match value {
+            latch::ErrorCode::AccessDenied => ErrorCode::AccessDenied,
+            latch::ErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
+            latch::ErrorCode::Other(error) => ErrorCode::Other(error),
+        }
     }
 }
 
-fn latch_error_code_map(error_code: latch::ErrorCode) -> ErrorCode {
-    match error_code {
-        latch::ErrorCode::AccessDenied => ErrorCode::AccessDenied,
-        latch::ErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
-        latch::ErrorCode::Other(error) => ErrorCode::Other(error),
+impl Display for latch::ErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.write_fmt(format_args!(
+            "{}",
+            match self {
+                latch::ErrorCode::AccessDenied => "access-denied".to_string(),
+                latch::ErrorCode::InvalidArgument => "invalid-argument".to_string(),
+                latch::ErrorCode::Other(None) => "other".to_string(),
+                latch::ErrorCode::Other(Some(error_code)) => format!("other<{error_code}>"),
+            }
+        ))
     }
 }
 
-fn ip_name_lookup_error_code_map(error_code: ip_name_lookup::ErrorCode) -> ErrorCode {
-    match error_code {
-        ip_name_lookup::ErrorCode::AccessDenied => ErrorCode::AccessDenied,
-        ip_name_lookup::ErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
-        ip_name_lookup::ErrorCode::NameUnresolvable => ErrorCode::NameUnresolvable,
-        ip_name_lookup::ErrorCode::TemporaryResolverFailure => ErrorCode::TemporaryResolverFailure,
-        ip_name_lookup::ErrorCode::PermanentResolverFailure => ErrorCode::PermanentResolverFailure,
-        ip_name_lookup::ErrorCode::Other(error) => ErrorCode::Other(error.clone()),
-    }
-}
 
-fn error_code_display(error_code: latch::ErrorCode) -> String {
-    match error_code {
-        latch::ErrorCode::AccessDenied => format!("access-denied"),
-        latch::ErrorCode::InvalidArgument => format!("invalid-argument"),
-        latch::ErrorCode::Other(error) => match error {
-            Some(error) => format!("other<{error}>"),
-            None => format!("other"),
-        },
-    }
-}
 
 wit_bindgen::generate!({
     path: "../../wit",
     world: "gated-ip-name-lookup",
+    merge_structurally_equal_types: true,
     generate_all
 });
 

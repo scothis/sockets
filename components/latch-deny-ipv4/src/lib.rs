@@ -86,11 +86,8 @@ impl Latch for DenyIPv4Latch {
                 }
                 UdpSocketOperation::Receive((_, udp_socket_receive_args)) => {
                     match udp_socket_receive_args.remote_address {
-                        Some(IpSocketAddress::Ipv4(_)) => {
-                            Some(Decision::Denied(ErrorCode::AccessDenied))
-                        }
-                        Some(IpSocketAddress::Ipv6(_)) => None,
-                        None => None,
+                        IpSocketAddress::Ipv4(_) => Some(Decision::Denied(ErrorCode::AccessDenied)),
+                        IpSocketAddress::Ipv6(_) => None,
                     }
                 }
             },
@@ -101,6 +98,7 @@ impl Latch for DenyIPv4Latch {
 wit_bindgen::generate!({
     path: "../../wit",
     world: "sockets-latch",
+    merge_structurally_equal_types: true,
     generate_all
 });
 

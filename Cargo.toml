@@ -11,4 +11,4 @@ exclude = [
 [workspace.dependencies]
 heck = "0.5"
 latch-n = { path = "./crates/latch-n" }
-wit-bindgen = { version = "0.57.1", features = ["async-spawn"] }
+wit-bindgen = { version = "0.58.0", features = ["async-spawn"], git = "https://github.com/scothis/wit-bindgen.git", branch = "macro-merge-structurally-equal-types" }
