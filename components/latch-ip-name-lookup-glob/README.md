@@ -1,8 +1,8 @@
 # `latch-ip-name-lookup-glob`
 
-Socket latch that uses glob patterns to permit or deny ip-name lookups.
+Socket latch that uses glob patterns to grant or deny ip-name lookups.
 
-The patterns are defined in a wasi:config/store. Keys starting with `deny` are parsed as globs with matching host names being denied. Multiple patterns are allowed by defining unique config keys (e.g. `deny-1`, `deny-2`, etc). Keys starting with `permit` are parsed as globs with matching host names being permitted.
+The patterns are defined in a wasi:config/store. Keys starting with `deny` are parsed as globs with matching host names being denied. Multiple patterns are allowed by defining unique config keys (e.g. `deny-1`, `deny-2`, etc). Keys starting with `grant` are parsed as globs with matching host names being granted.
 
 Each label within the hostname is treated like a directory for wildcards. A single `*` matches within the label boundary `.`, while `**` will span labels.
 

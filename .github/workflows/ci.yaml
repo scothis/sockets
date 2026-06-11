@@ -14,6 +14,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v6
+      with:
+        submodules: true
     - uses: actions-rust-lang/setup-rust-toolchain@v1
     - name: Install cargo binstall
       uses: cargo-bins/cargo-binstall@main

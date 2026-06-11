@@ -1,5 +1,5 @@
 [package]
-name = "gate-tcp"
+name = "gate-types"
 version = "0.1.0"
 edition = "2021"
 license = "Apache-2.0"
@@ -9,4 +9,3 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wit-bindgen = { workspace = true }
-heck = "0.5"

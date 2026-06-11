@@ -26,14 +26,14 @@ A collection of utility components that remix wasi:socket types and interfaces.
 - [`latch-deny-connect`](./components/latch-deny-connect/)
 - [`latch-deny-ipv4`](./components/latch-deny-ipv4/)
 - [`latch-deny-ipv6`](./components/latch-deny-ipv6/)
+- [`latch-grant-all`](./components/latch-grant-all/)
 - [`latch-ip-name-lookup-glob`](./components/latch-ip-name-lookup-glob/)
-- [`latch-permit-all`](./components/latch-permit-all/)
 
 ## Build
 
 Prereqs:
 - a rust toolchain
-- [`cargo component`](https://github.com/bytecodealliance/cargo-component)
+- [`wasm-tools`](https://github.com/bytecodealliance/wasm-tools)
 - [`wac`](https://github.com/bytecodealliance/wac)
 - [`wkg`](https://github.com/bytecodealliance/wasm-pkg-tools)
 

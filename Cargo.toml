@@ -9,5 +9,6 @@ exclude = [
 ]
 
 [workspace.dependencies]
+heck = "0.5"
 latch-n = { path = "./crates/latch-n" }
-wit-bindgen = "0.57.1"
+wit-bindgen = { version = "0.58.0", features = ["async-spawn"], git = "https://github.com/bytecodealliance/wit-bindgen.git", branch = "main" }
