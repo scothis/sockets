@@ -4,16 +4,16 @@ world gated-ip-name-lookup {
     import latch;
     import wasi:config/store@0.2.0-rc.1;
     import wasi:logging/logging@0.1.0-draft;
-    import wasi:sockets/ip-name-lookup@0.3.0-rc-2026-03-15;
-    export wasi:sockets/ip-name-lookup@0.3.0-rc-2026-03-15;
+    import wasi:sockets/ip-name-lookup@0.3.0;
+    export wasi:sockets/ip-name-lookup@0.3.0;
 }
 
 world gated-types {
     import latch;
     import wasi:config/store@0.2.0-rc.1;
     import wasi:logging/logging@0.1.0-draft;
-    import wasi:sockets/types@0.3.0-rc-2026-03-15;
-    export wasi:sockets/types@0.3.0-rc-2026-03-15;
+    import wasi:sockets/types@0.3.0;
+    export wasi:sockets/types@0.3.0;
 }
 
 world sockets-latch {

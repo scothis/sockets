@@ -1,3 +1,1 @@
 [overrides]
-"wasi:clocks" = { path = "./wasi/proposals/clocks/wit-0.3.0-draft/" }
-"wasi:sockets" = { path = "./wasi/proposals/sockets/wit-0.3.0-draft/" }

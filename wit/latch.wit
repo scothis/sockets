@@ -1,6 +1,6 @@
 
 interface latch {
-    use wasi:sockets/types@0.3.0-rc-2026-03-15.{ip-address, ip-address-family, ip-socket-address, tcp-socket, udp-socket};
+    use wasi:sockets/types@0.3.0.{ip-address, ip-address-family, ip-socket-address, tcp-socket, udp-socket};
 
     record resolve-addresses-args {
         name: string,
