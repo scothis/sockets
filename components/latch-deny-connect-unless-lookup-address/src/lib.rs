@@ -10,11 +10,11 @@ use crate::exports::componentized::sockets::latch::{
 };
 
 struct State {
-    permitted_addresses: Mutex<HashSet<IpAddress>>,
+    granted_addresses: Mutex<HashSet<IpAddress>>,
 }
 
 impl State {
-    fn is_permitted_socket_address(socket_address: IpSocketAddress) -> bool {
+    fn is_granted_socket_address(socket_address: IpSocketAddress) -> bool {
         let ip_address = match socket_address {
             IpSocketAddress::Ipv4(ipv4_socket_address) => {
                 IpAddress::Ipv4(ipv4_socket_address.address)
@@ -24,15 +24,15 @@ impl State {
             }
         };
         Self::get()
-            .permitted_addresses
+            .granted_addresses
             .lock()
             .unwrap()
             .contains(&ip_address)
     }
 
-    fn permit_ip_address(ip_address: IpAddress) {
+    fn grant_ip_address(ip_address: IpAddress) {
         Self::get()
-            .permitted_addresses
+            .granted_addresses
             .lock()
             .unwrap()
             .insert(ip_address);
@@ -40,7 +40,7 @@ impl State {
 
     fn get() -> &'static Self {
         STATE.get_or_init(|| Self {
-            permitted_addresses: Mutex::new(HashSet::new()),
+            granted_addresses: Mutex::new(HashSet::new()),
         })
     }
 }
@@ -53,7 +53,7 @@ impl Latch for ConnectToLookedUpAddressLatch {
     fn authorize(operation: Operation) -> Option<Decision> {
         let operation = operation.into();
         let decision = match latch::authorize(&operation) {
-            Some(latch::Decision::Permitted) => Some(Decision::Permitted),
+            Some(latch::Decision::Granted) => Some(Decision::Granted),
             Some(latch::Decision::Denied(error_code)) => Some(Decision::Denied(error_code.into())),
             None => match &operation {
                 latch::Operation::IpNameLookup(_) => None,
@@ -61,7 +61,7 @@ impl Latch for ConnectToLookedUpAddressLatch {
                     latch::TcpSocketOperation::Create(_) => None,
                     latch::TcpSocketOperation::Bind(_) => None,
                     latch::TcpSocketOperation::Connect((_, tcp_socket_connect_args)) => {
-                        match State::is_permitted_socket_address(
+                        match State::is_granted_socket_address(
                             tcp_socket_connect_args.remote_address,
                         ) {
                             true => None,
@@ -77,7 +77,7 @@ impl Latch for ConnectToLookedUpAddressLatch {
                     latch::UdpSocketOperation::Create(_) => None,
                     latch::UdpSocketOperation::Bind(_) => None,
                     latch::UdpSocketOperation::Connect((_, udp_socket_connect_args)) => {
-                        match State::is_permitted_socket_address(
+                        match State::is_granted_socket_address(
                             udp_socket_connect_args.remote_address,
                         ) {
                             true => None,
@@ -87,7 +87,7 @@ impl Latch for ConnectToLookedUpAddressLatch {
                     latch::UdpSocketOperation::Send((_, udp_socket_send_args)) => {
                         match udp_socket_send_args.remote_address {
                             Some(remote_address) => {
-                                match State::is_permitted_socket_address(remote_address) {
+                                match State::is_granted_socket_address(remote_address) {
                                     true => None,
                                     false => Some(Decision::Denied(ErrorCode::AccessDenied)),
                                 }
@@ -107,7 +107,7 @@ impl Latch for ConnectToLookedUpAddressLatch {
                 ),
             ) = operation
             {
-                State::permit_ip_address(ip_address)
+                State::grant_ip_address(ip_address)
             }
         }
 

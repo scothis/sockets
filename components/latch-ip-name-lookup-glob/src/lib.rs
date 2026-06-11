@@ -12,7 +12,7 @@ struct GlobIpNameLookupLatch {}
 struct Patterns {
     initialized: bool,
     denies: Option<Vec<Box<dyn PathMatcher>>>,
-    permits: Option<Vec<Box<dyn PathMatcher>>>,
+    grants: Option<Vec<Box<dyn PathMatcher>>>,
     deny_reason: Option<ErrorCode>,
     default: Option<Decision>,
 }
@@ -24,7 +24,7 @@ impl Patterns {
         }
 
         let mut denies: Vec<Box<dyn PathMatcher>> = vec![];
-        let mut permits: Vec<Box<dyn PathMatcher>> = vec![];
+        let mut grants: Vec<Box<dyn PathMatcher>> = vec![];
         let mut reason = ErrorCode::AccessDenied;
         let mut default = None;
 
@@ -34,9 +34,9 @@ impl Patterns {
                 denies.push(Box::new(
                     glob(&value).expect("config value must parse as a glob"),
                 ));
-            } else if key.starts_with("permit") {
+            } else if key.starts_with("grant") {
                 let value = value.replace(".", "/").to_lowercase();
-                permits.push(Box::new(
+                grants.push(Box::new(
                     glob(&value).expect("config value must parse as a glob"),
                 ));
             } else if key == "reason" {
@@ -47,7 +47,7 @@ impl Patterns {
             } else if key == "default" {
                 default = match value.as_str() {
                     "deny" => Some(Decision::Denied(reason.clone())),
-                    "permit" => Some(Decision::Permitted),
+                    "grant" => Some(Decision::Granted),
                     _ => None,
                 }
             }
@@ -55,7 +55,7 @@ impl Patterns {
 
         unsafe {
             STATE.denies = Some(denies);
-            STATE.permits = Some(permits);
+            STATE.grants = Some(grants);
             STATE.deny_reason = Some(reason);
             STATE.default = default;
             STATE.initialized = true;
@@ -80,9 +80,9 @@ impl Patterns {
                 return Some(Decision::Denied(self.deny_reason.clone().unwrap()));
             }
         }
-        for permit in self.permits.as_ref().unwrap() {
-            if permit.matches(name) {
-                return Some(Decision::Permitted);
+        for grant in self.grants.as_ref().unwrap() {
+            if grant.matches(name) {
+                return Some(Decision::Granted);
             }
         }
         None
@@ -92,7 +92,7 @@ impl Patterns {
 static mut STATE: Patterns = Patterns {
     initialized: false,
     denies: None,
-    permits: None,
+    grants: None,
     deny_reason: None,
     default: None,
 };
