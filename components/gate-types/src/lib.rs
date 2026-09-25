@@ -1,6 +1,7 @@
 #![no_main]
 
 use std::fmt::Display;
+use std::future::Future;
 
 use crate::componentized::sockets::latch::{
     authorize,
@@ -285,51 +286,9 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=accept&sektion=2>"]
     #[allow(async_fn_in_trait)]
     fn listen(&self) -> Result<wit_bindgen::rt::async_support::StreamReader<TcpSocket>, ErrorCode> {
-        let call_summary = || format!("OPERATION=wasi:sockets/types#tcp-socket.listen");
-        match authorize(&Operation::TcpSocket(TcpSocketOperation::Listen((
-            &self.socket,
-        )))) {
-            Ok(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} {}", call_summary());
-                Err(error_code.into())
-            }
-            Ok(Abstained) => match self.socket.listen() {
-                Ok(mut stream) => {
-                    let (mut stream_writer, stream_reader) = wit_stream::new::<TcpSocket>();
-                    wit_bindgen::spawn_local(async move {
-                        while let Some(socket) = stream.next().await {
-                            let call_summary = || {
-                                format!("OPERATION=wasi:sockets/types#tcp-socket.listen.connection")
-                            };
-                            match authorize(&Operation::TcpSocket(
-                                TcpSocketOperation::ListenConnection((&socket,)),
-                            )) {
-                                Ok(Denied(error_code)) => {
-                                    trace!("Denied REASON={error_code} {}", call_summary());
-                                }
-                                Ok(Abstained) => {
-                                    let socket = TcpSocket::new(GatedTcpSocket::new(socket));
-                                    stream_writer
-                                        .write_one(socket)
-                                        .await
-                                        .expect("stream write to succeed");
-                                }
-                                Err(code) => {
-                                    trace!("Latch error CODE={code} {}", call_summary());
-                                }
-                            }
-                        }
-                    });
-                    // TODO do we close the stream or is it dropped automatically?
-                    Ok(stream_reader)
-                }
-                Err(error_code) => Err(error_code),
-            },
-            Err(code) => {
-                error!("Latch error CODE={code} {}", call_summary());
-                Err(code)?
-            }
-        }
+        // spawning async calls from a sync context is not yet supported by the component model
+        warn!("Denied REASON=cooperative-multithreading-required OPERATION=wasi:sockets/types#tcp-socket.listen");
+        Err(types::ErrorCode::NotSupported)
     }
 
     #[doc = "/ Transmit data to peer."]
@@ -359,14 +318,7 @@ impl GuestTcpSocket for GatedTcpSocket {
         &self,
         data: wit_bindgen::StreamReader<u8>,
     ) -> wit_bindgen::FutureReader<Result<(), ErrorCode>> {
-        let (tx, rx) = wit_future::new(|| Err(ErrorCode::Other(None)));
-        let send_result = self.socket.send(data);
-        wit_bindgen::spawn_local(async move {
-            tx.write(send_result.await)
-                .await
-                .expect("future write to succeed");
-        });
-        rx
+        self.socket.send(data)
     }
 
     #[doc = "/ Read data from peer."]
@@ -403,16 +355,7 @@ impl GuestTcpSocket for GatedTcpSocket {
         wit_bindgen::StreamReader<u8>,
         wit_bindgen::FutureReader<Result<(), ErrorCode>>,
     ) {
-        let (data, result) = self.socket.receive();
-        let (tx, rx) = wit_future::new(|| Err(ErrorCode::Other(None)));
-
-        wit_bindgen::spawn_local(async move {
-            tx.write(result.await)
-                .await
-                .expect("future write to succeed");
-        });
-
-        (data, rx)
+        self.socket.receive()
     }
 
     #[doc = "/ Get the bound local address."]
