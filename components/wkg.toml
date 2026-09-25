@@ -1,0 +1,2 @@
+[overrides]
+"componentized:sockets" = { path = "../wit" }

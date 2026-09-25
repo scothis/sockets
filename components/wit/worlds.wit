@@ -1,0 +1,33 @@
+package componentized:sockets-components;
+
+
+world gated-ip-name-lookup {
+    import componentized:sockets/latch@0.0.0-dev;
+    import wasi:config/store@0.2.0-rc.1;
+    import wasi:logging/logging@0.1.0-draft;
+    import wasi:sockets/ip-name-lookup@0.3.0;
+    export wasi:sockets/ip-name-lookup@0.3.0;
+}
+
+world gated-types {
+    import componentized:sockets/latch@0.0.0-dev;
+    import wasi:config/store@0.2.0-rc.1;
+    import wasi:logging/logging@0.1.0-draft;
+    import wasi:sockets/types@0.3.0;
+    export wasi:sockets/types@0.3.0;
+}
+
+world sockets-latch {
+    import wasi:config/store@0.2.0-rc.1;
+    import componentized:sockets/latch@0.0.0-dev;
+    export componentized:sockets/latch@0.0.0-dev;
+}
+
+world sockets-latch-n {
+    export componentized:sockets/latch@0.0.0-dev;
+    import componentized:sockets/latch@0.0.0-dev;
+    import componentized:sockets/latch1@0.0.0-dev;
+    import componentized:sockets/latch2@0.0.0-dev;
+    import componentized:sockets/latch3@0.0.0-dev;
+    import componentized:sockets/latch4@0.0.0-dev;
+}

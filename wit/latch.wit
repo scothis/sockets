@@ -1,4 +1,3 @@
-
 interface latch {
     use wasi:sockets/types@0.3.0.{ip-address, ip-address-family, ip-socket-address, tcp-socket, udp-socket};
 
@@ -27,7 +26,7 @@ interface latch {
         remote-address: ip-socket-address,
     }
 
-    variant tcp-socket-operation{
+    variant tcp-socket-operation {
         create(tcp-socket-create-args),
         bind(tuple<borrow<tcp-socket>, tcp-socket-bind-args>),
         connect(tuple<borrow<tcp-socket>, tcp-socket-connect-args>),
@@ -61,7 +60,7 @@ interface latch {
         remote-address: ip-socket-address,
     }
 
-    variant udp-socket-operation{
+    variant udp-socket-operation {
         create(udp-socket-create-args),
         bind(tuple<borrow<udp-socket>, udp-socket-bind-args>),
         connect(tuple<borrow<udp-socket>, udp-socket-connect-args>),
@@ -75,41 +74,54 @@ interface latch {
         udp-socket(udp-socket-operation),
     }
 
+    variant decision {
+        abstained,
+        denied(sockets-error-code),
+    }
+
     variant error-code {
-        // common codes across types#error-code and ip-name-lookup#error-code
-        access-denied,
-        invalid-argument,
         other(option<string>),
     }
 
-    variant decision {
-        granted,
-        denied(error-code),
+    variant sockets-error-code {
+        /// Access denied.
+        ///
+        /// POSIX equivalent: EACCES, EPERM
+        access-denied,
+        /// One of the arguments is invalid.
+        ///
+        /// POSIX equivalent: EINVAL, EDESTADDRREQ, EAFNOSUPPORT
+        invalid-argument,
+        /// A catch-all for errors not captured by the existing variants.
+        /// Implementations can use this to extend the error type without
+        /// breaking existing code.
+        other(option<string>),
     }
 
-    authorize: func(operation: operation) -> option<decision>;
+    authorize: func(operation: operation) -> result<decision, error-code>;
 }
 
-interface latch1 {
-    use latch.{operation, decision};
 
-    authorize: func(operation: operation) -> option<decision>;
+interface latch1 {
+    use latch.{error-code, operation, decision};
+
+    authorize: func(operation: operation) -> result<decision, error-code>;
 }
 
 interface latch2 {
-    use latch.{operation, decision};
+    use latch.{error-code, operation, decision};
 
-    authorize: func(operation: operation) -> option<decision>;
+    authorize: func(operation: operation) -> result<decision, error-code>;
 }
 
 interface latch3 {
-    use latch.{operation, decision};
+    use latch.{error-code, operation, decision};
 
-    authorize: func(operation: operation) -> option<decision>;
+    authorize: func(operation: operation) -> result<decision, error-code>;
 }
 
 interface latch4 {
-    use latch.{operation, decision};
+    use latch.{error-code, operation, decision};
 
-    authorize: func(operation: operation) -> option<decision>;
+    authorize: func(operation: operation) -> result<decision, error-code>;
 }

@@ -1,14 +1,14 @@
 #![no_main]
 
 use crate::exports::componentized::sockets::latch::{
-    Decision, ErrorCode, Guest as Latch, Operation, SocketsErrorCode,
+    Decision, ErrorCode, Guest as Latch, Operation,
 };
 
-struct DenyAllLatch {}
+struct AbstainAllLatch {}
 
-impl Latch for DenyAllLatch {
+impl Latch for AbstainAllLatch {
     fn authorize(_: Operation) -> Result<Decision, ErrorCode> {
-        Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
+        Ok(Decision::Abstained)
     }
 }
 
@@ -19,4 +19,4 @@ wit_bindgen::generate!({
     generate_all
 });
 
-export!(DenyAllLatch);
+export!(AbstainAllLatch);

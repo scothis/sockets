@@ -4,7 +4,7 @@ use path_matchers::{glob, PathMatcher};
 use std::path::Path;
 
 use crate::exports::componentized::sockets::latch::{
-    Decision, ErrorCode, Guest as Latch, IpNameLookupOperation, Operation,
+    Decision, ErrorCode, Guest as Latch, IpNameLookupOperation, Operation, SocketsErrorCode,
 };
 
 struct GlobIpNameLookupLatch {}
@@ -13,8 +13,8 @@ struct Patterns {
     initialized: bool,
     denies: Option<Vec<Box<dyn PathMatcher>>>,
     grants: Option<Vec<Box<dyn PathMatcher>>>,
-    deny_reason: Option<ErrorCode>,
-    default: Option<Decision>,
+    deny_reason: Option<SocketsErrorCode>,
+    default: Decision,
 }
 
 impl Patterns {
@@ -25,8 +25,8 @@ impl Patterns {
 
         let mut denies: Vec<Box<dyn PathMatcher>> = vec![];
         let mut grants: Vec<Box<dyn PathMatcher>> = vec![];
-        let mut reason = ErrorCode::AccessDenied;
-        let mut default = None;
+        let mut reason = SocketsErrorCode::AccessDenied;
+        let mut default = Decision::Abstained;
 
         for (key, value) in wasi::config::store::get_all().expect("config must be available") {
             if key.starts_with("deny") {
@@ -40,15 +40,15 @@ impl Patterns {
                     glob(&value).expect("config value must parse as a glob"),
                 ));
             } else if key == "reason" {
-                reason = get_error_code(value).unwrap_or(ErrorCode::AccessDenied);
-                if let Some(Decision::Denied(_)) = default {
-                    default = Some(Decision::Denied(reason.clone()))
+                reason = get_error_code(value).unwrap_or(SocketsErrorCode::AccessDenied);
+                if let Decision::Abstained = default {
+                    default = Decision::Denied(reason.clone())
                 }
             } else if key == "default" {
                 default = match value.as_str() {
-                    "deny" => Some(Decision::Denied(reason.clone())),
-                    "grant" => Some(Decision::Granted),
-                    _ => None,
+                    "deny" => Decision::Denied(reason.clone()),
+                    "abstain" => Decision::Abstained,
+                    _ => panic!("unknown default value: {value}, expected 'deny' or 'abstain'"),
                 }
             }
         }
@@ -63,29 +63,24 @@ impl Patterns {
     }
 
     #[allow(static_mut_refs)]
-    fn authorize(name: String) -> Option<Decision> {
+    fn authorize(name: String) -> Result<Decision, ErrorCode> {
         let decision = unsafe { STATE.authorize_name(name) };
-        if decision.is_some() {
+        if matches!(decision, Ok(Decision::Denied(_))) {
             return decision;
         }
-        unsafe { STATE.default.clone() }
+        unsafe { Ok(STATE.default.clone()) }
     }
 
-    fn authorize_name(&self, name: String) -> Option<Decision> {
+    fn authorize_name(&self, name: String) -> Result<Decision, ErrorCode> {
         let name = name.replace(".", "/").to_lowercase();
         let name = Path::new(&name);
 
         for deny in self.denies.as_ref().unwrap() {
             if deny.matches(name) {
-                return Some(Decision::Denied(self.deny_reason.clone().unwrap()));
+                return Ok(Decision::Denied(self.deny_reason.clone().unwrap()));
             }
         }
-        for grant in self.grants.as_ref().unwrap() {
-            if grant.matches(name) {
-                return Some(Decision::Granted);
-            }
-        }
-        None
+        Ok(Decision::Abstained)
     }
 }
 
@@ -94,11 +89,11 @@ static mut STATE: Patterns = Patterns {
     denies: None,
     grants: None,
     deny_reason: None,
-    default: None,
+    default: Decision::Abstained,
 };
 
 impl Latch for GlobIpNameLookupLatch {
-    fn authorize(operation: Operation) -> Option<Decision> {
+    fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
         Patterns::initialize();
 
         match operation {
@@ -106,25 +101,25 @@ impl Latch for GlobIpNameLookupLatch {
                 IpNameLookupOperation::ResolveAddresses(resolve_addresses_args) => {
                     Patterns::authorize(resolve_addresses_args.name)
                 }
-                IpNameLookupOperation::ResolveAddressesReturn(_) => None,
+                IpNameLookupOperation::ResolveAddressesReturn(_) => Ok(Decision::Abstained),
             },
-            _ => None,
+            _ => Ok(Decision::Abstained),
         }
     }
 }
 
-fn get_error_code(value: String) -> Option<ErrorCode> {
+fn get_error_code(value: String) -> Option<SocketsErrorCode> {
     match value.as_str() {
         "" => None,
-        "access-denied" => Some(ErrorCode::AccessDenied),
-        "invalid-argument" => Some(ErrorCode::InvalidArgument),
-        "other" => Some(ErrorCode::Other(None)),
-        _ => Some(ErrorCode::Other(Some(value))),
+        "access-denied" => Some(SocketsErrorCode::AccessDenied),
+        "invalid-argument" => Some(SocketsErrorCode::InvalidArgument),
+        "other" => Some(SocketsErrorCode::Other(None)),
+        _ => Some(SocketsErrorCode::Other(Some(value))),
     }
 }
 
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "../wit",
     world: "sockets-latch",
     merge_structurally_equal_types: true,
     generate_all

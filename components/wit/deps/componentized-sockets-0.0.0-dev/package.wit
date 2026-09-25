@@ -1,0 +1,133 @@
+package componentized:sockets@0.0.0-dev;
+
+interface latch {
+  use wasi:sockets/types@0.3.0.{ip-address, ip-address-family, ip-socket-address, tcp-socket, udp-socket};
+
+  record resolve-addresses-args {
+    name: string,
+  }
+
+  record resolve-addresses-returns-item {
+    ip-address: ip-address,
+  }
+
+  variant ip-name-lookup-operation {
+    resolve-addresses(resolve-addresses-args),
+    resolve-addresses-return(resolve-addresses-returns-item),
+  }
+
+  record tcp-socket-create-args {
+    address-family: ip-address-family,
+  }
+
+  record tcp-socket-bind-args {
+    local-address: ip-socket-address,
+  }
+
+  record tcp-socket-connect-args {
+    remote-address: ip-socket-address,
+  }
+
+  variant tcp-socket-operation {
+    create(tcp-socket-create-args),
+    bind(tuple<borrow<tcp-socket>, tcp-socket-bind-args>),
+    connect(tuple<borrow<tcp-socket>, tcp-socket-connect-args>),
+    listen(tuple<borrow<tcp-socket>>),
+    listen-connection(tuple<borrow<tcp-socket>>),
+    /// TODO listen-return-item
+    send(tuple<borrow<tcp-socket>>),
+    receive(tuple<borrow<tcp-socket>>),
+  }
+
+  record udp-socket-create-args {
+    address-family: ip-address-family,
+  }
+
+  record udp-socket-bind-args {
+    local-address: ip-socket-address,
+  }
+
+  record udp-socket-connect-args {
+    remote-address: ip-socket-address,
+  }
+
+  record udp-socket-send-args {
+    data-length: u64,
+    remote-address: option<ip-socket-address>,
+  }
+
+  record udp-socket-receive-returns {
+    data-length: u64,
+    remote-address: ip-socket-address,
+  }
+
+  variant udp-socket-operation {
+    create(udp-socket-create-args),
+    bind(tuple<borrow<udp-socket>, udp-socket-bind-args>),
+    connect(tuple<borrow<udp-socket>, udp-socket-connect-args>),
+    send(tuple<borrow<udp-socket>, udp-socket-send-args>),
+    receive(tuple<borrow<udp-socket>, udp-socket-receive-returns>),
+  }
+
+  variant operation {
+    ip-name-lookup(ip-name-lookup-operation),
+    tcp-socket(tcp-socket-operation),
+    udp-socket(udp-socket-operation),
+  }
+
+  variant error-code {
+    other(option<string>),
+  }
+
+  variant sockets-error-code {
+    /// Access denied.
+    ///
+    /// POSIX equivalent: EACCES, EPERM
+    access-denied,
+    /// One of the arguments is invalid.
+    ///
+    /// POSIX equivalent: EINVAL, EDESTADDRREQ, EAFNOSUPPORT
+    invalid-argument,
+    /// A catch-all for errors not captured by the existing variants.
+    /// Implementations can use this to extend the error type without
+    /// breaking existing code.
+    other(option<string>),
+  }
+
+  variant decision {
+    abstained,
+    denied(sockets-error-code),
+  }
+
+  authorize: func(operation: operation) -> result<decision, error-code>;
+}
+
+interface latch1 {
+  use latch.{error-code, operation, decision};
+
+  authorize: func(operation: operation) -> result<decision, error-code>;
+}
+
+interface latch2 {
+  use latch.{error-code, operation, decision};
+
+  authorize: func(operation: operation) -> result<decision, error-code>;
+}
+
+interface latch3 {
+  use latch.{error-code, operation, decision};
+
+  authorize: func(operation: operation) -> result<decision, error-code>;
+}
+
+interface latch4 {
+  use latch.{error-code, operation, decision};
+
+  authorize: func(operation: operation) -> result<decision, error-code>;
+}
+
+world imports {
+  import wasi:clocks/types@0.3.0;
+  import wasi:sockets/types@0.3.0;
+  import latch;
+}

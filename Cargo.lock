@@ -147,6 +147,13 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "d75a2a4b1b190afb6f5425f10f6a8f959d2ea0b9c2b1d79553551850539e4674"
 
 [[package]]
+name = "latch-abstain-all"
+version = "0.1.0"
+dependencies = [
+ "wit-bindgen",
+]
+
+[[package]]
 name = "latch-deny-all"
 version = "0.1.0"
 dependencies = [
@@ -187,13 +194,6 @@ name = "latch-deny-ipv6"
 version = "0.1.0"
 dependencies = [
  "heck",
- "wit-bindgen",
-]
-
-[[package]]
-name = "latch-grant-all"
-version = "0.1.0"
-dependencies = [
  "wit-bindgen",
 ]
 

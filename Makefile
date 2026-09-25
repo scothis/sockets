@@ -3,9 +3,11 @@ SHELL := /bin/bash
 export RUST_BACKTRACE ?= 1
 export WASMTIME_BACKTRACE_DETAILS ?= 1
 
-GITHUB_REPOSITORY ?= componentized/sockets
-
-COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/Cargo.toml)))))
+CARGO_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/Cargo.toml)))))
+CONFIG_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/*.properties)))))
+WAC_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/*.wac)))))
+WKG_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/*.wkg)))))
+COMPONENTS = $(sort $(CARGO_COMPONENTS) $(CONFIG_COMPONENTS) $(WAC_COMPONENTS) $(WKG_COMPONENTS))
 
 .PHONY: all
 all: components
@@ -15,58 +17,84 @@ clean:
 	cargo clean
 	rm -rf lib/*.wasm
 	rm -rf lib/*.wasm.md
-	rm -rf lib/tests/*.wasm
-	rm -rf lib/tests/*.wasm.md
 
 .PHONY: test
 test:
 	@echo "TODO add tests"
 
 .PHONY: components
-components: $(foreach component,$(COMPONENTS),lib/$(component).wasm) $(foreach component,$(COMPONENTS),lib/$(component).debug.wasm) lib/gate.wasm lib/gate.debug.wasm
+components: lib/interface.wasm $(foreach component,$(COMPONENTS),lib/$(component).wasm) $(foreach component,$(COMPONENTS),lib/$(component).debug.wasm)
 
 define BUILD_COMPONENT
 
+.PHONY: components/$1
 components/$1: lib/$1.wasm lib/$1.debug.wasm
 
-lib/$1.wasm: Cargo.toml Cargo.lock wit/deps $(shell find components/$1 -type f) $(shell find crates -type f)
+ifneq ($(wildcard components/$1/Cargo.toml),)
+
+lib/$1.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f)
 	cargo build -p $1 --target wasm32-unknown-unknown --release
 	wasm-tools component new target/wasm32-unknown-unknown/release/$(subst -,_,$1).wasm -o lib/$1.wasm
 	cp components/$1/README.md lib/$1.wasm.md
 
-lib/$1.debug.wasm: Cargo.toml Cargo.lock wit/deps $(shell find components/$1 -type f) $(shell find crates -type f)
-	cargo build -p $1 --target wasm32-unknown-unknown
+lib/$1.debug.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f)
+	cargo build --target wasm32-unknown-unknown -p $1
 	wasm-tools component new target/wasm32-unknown-unknown/debug/$(subst -,_,$1).wasm -o lib/$1.debug.wasm
 	cp components/$1/README.md lib/$1.debug.wasm.md
+
+else ifneq ($(wildcard components/$1/$1.properties),)
+
+lib/$1.wasm: components/$1/$1.properties components/$1/README.md
+	static-config -f components/$1/$1.properties -o lib/$1.wasm
+	cp components/$1/README.md lib/$1.wasm.md
+
+lib/$1.debug.wasm: components/$1/$1.properties components/$1/README.md
+	static-config -f components/$1/$1.properties -o lib/$1.debug.wasm
+	cp components/$1/README.md lib/$1.debug.wasm.md
+
+else ifneq ($(wildcard components/$1/$1.wac),)
+
+WAC_DEPS_$1 := $(shell wac parse components/$1/$1.wac 2> /dev/null | jq -r '[.. | .package?.name? | strings | select(startswith("local:")) | sub("^local:"; "")] | unique[]')
+
+lib/$1.wasm: components/$1/$1.wac components/$1/README.md $$(foreach component,$$(WAC_DEPS_$1),lib/$$(component).wasm)
+	wac compose $$(foreach component,$$(WAC_DEPS_$1),-d local:$$(component)=lib/$$(component).wasm) -o lib/$1.wasm components/$1/$1.wac
+	cp components/$1/README.md lib/$1.wasm.md
+
+lib/$1.debug.wasm: components/$1/$1.wac components/$1/README.md $$(foreach component,$$(WAC_DEPS_$1),lib/$$(component).debug.wasm)
+	wac compose $$(foreach component,$$(WAC_DEPS_$1),-d local:$$(component)=lib/$$(component).debug.wasm) -o lib/$1.debug.wasm components/$1/$1.wac
+	cp components/$1/README.md lib/$1.debug.wasm.md
+
+else ifneq ($(wildcard components/$1/$1.wkg),)
+
+lib/$1.wasm: components/$1/$1.wkg components/$1/README.md
+	wkg oci pull $(shell cat components/$1/$1.wkg 2> /dev/null | head -1) -o lib/$1.wasm
+	cp components/$1/README.md lib/$1.wasm.md
+
+lib/$1.debug.wasm: components/$1/$1.wkg components/$1/README.md
+	wkg oci pull $(shell cat components/$1/$1.wkg  2> /dev/null | tail -1 2> /dev/null) -o lib/$1.debug.wasm
+	cp components/$1/README.md lib/$1.debug.wasm.md
+
+endif
 
 endef
 
 $(foreach component,$(COMPONENTS),$(eval $(call BUILD_COMPONENT,$(component))))
 
-components/gate: lib/gate.wasm lib/gate.debug.wasm
-
-lib/gate.wasm: components/gate/gate.wac lib/gate-ip-name-lookup.wasm lib/gate-types.wasm components/gate/README.md
-	wac compose components/gate/gate.wac \
-		-d componentized:gate-ip-name-lookup=lib/gate-ip-name-lookup.wasm \
-		-d componentized:gate-types=lib/gate-types.wasm \
-		-o lib/gate.wasm
-	cp components/gate/README.md lib/gate.wasm.md
-
-lib/gate.debug.wasm: components/gate/gate.wac lib/gate-ip-name-lookup.debug.wasm lib/gate-types.debug.wasm components/gate/README.md
-	wac compose components/gate/gate.wac \
-		-d componentized:gate-ip-name-lookup=lib/gate-ip-name-lookup.debug.wasm \
-		-d componentized:gate-types=lib/gate-types.debug.wasm \
-		-o lib/gate.debug.wasm
-	cp components/gate/README.md lib/gate.debug.wasm.md
+lib/interface.wasm: wit/deps README.md
+	wkg build -o lib/interface.wasm
+	cp README.md lib/interface.wasm.md
 
 .PHONY: wit
-wit: wit/deps
+wit: wit/deps components/wit/deps
 
 wit/deps: wkg.toml $(shell find wit -type f -name "*.wit" -not -path "deps")
-	wkg wit fetch
+	wkg fetch
 
-.PHONY: publish
-publish: $(shell find lib -type f -name "*.wasm" | sed -e 's:^lib/:publish-:g')
+components/wit/deps: wit/deps components/wkg.toml $(shell find components/wit -type f -name "*.wit" -not -path "deps")
+	( cd components && wkg fetch )
+
+.PHONY: publish ## Publish each component in the lib directory
+publish: $(shell find lib -maxdepth 1 -type f -name "*.wasm" | sed -e 's:^lib/:publish-:g')
 
 .PHONY: publish-%
 publish-%:
@@ -77,25 +105,28 @@ ifndef REPOSITORY
 	$(error REPOSITORY is undefined)
 endif
 	@$(eval FILE := $(@:publish-%=%))
-	@$(eval COMPONENT := $(FILE:%.wasm=%))
+	@$(eval COMPONENT := $(if $(filter %.debug.wasm,$(FILE)),$(FILE:%.debug.wasm=%),$(FILE:%.wasm=%)))
+	@$(eval TITLE := $(if $(filter %.debug.wasm,$(FILE)),$(COMPONENT) (debug),$(COMPONENT)))
 	@$(eval DESCRIPTION := $(shell head -n 3 "lib/${FILE}.md" | tail -n 1))
 	@$(eval REVISION := $(shell git rev-parse HEAD)$(shell git diff --quiet HEAD && echo "+dirty"))
-	@$(eval TAG := $(shell echo "${VERSION}" | sed 's/[^a-zA-Z0-9_.\-]/--/g'))
+	@$(eval COMPONENT_VERSION := $(if $(filter %.debug.wasm,$(FILE)),${VERSION}+debug,${VERSION}))
+	@$(eval TAG := $(patsubst v%,%,$(subst +,_,$(COMPONENT_VERSION))))
+	@$(eval IMAGE := $(if $(filter interface.wasm,$(FILE)),${REPOSITORY}:${TAG},${REPOSITORY}/${COMPONENT}:${TAG}))
 
-	@echo "::group::${FILE} -> ${REPOSITORY}/${COMPONENT}:${TAG}"
+	@echo "::group::${FILE} -> ${IMAGE}"
 	@DIGEST=$$( \
 		wkg oci push \
-			--annotation "org.opencontainers.image.title=${COMPONENT}" \
+			--annotation "org.opencontainers.image.title=${TITLE}" \
 			--annotation "org.opencontainers.image.description=${DESCRIPTION}" \
-			--annotation "org.opencontainers.image.version=${VERSION}" \
+			--annotation "org.opencontainers.image.version=${COMPONENT_VERSION}" \
 			--annotation "org.opencontainers.image.source=https://github.com/${GITHUB_REPOSITORY}.git" \
 			--annotation "org.opencontainers.image.revision=${REVISION}" \
 			--annotation "org.opencontainers.image.licenses=Apache-2.0" \
-			"${REPOSITORY}/${COMPONENT}:${TAG}" \
+			"${IMAGE}" \
 			"lib/${FILE}" \
 			2>&1 \
 			| tee /dev/stderr \
 			| grep -o 'sha256:[a-f0-9]\{64\}' \
 	) ; \
-	cosign sign --yes "${REPOSITORY}/${COMPONENT}:${TAG}@$${DIGEST}"
+	cosign sign --yes "${IMAGE}@$${DIGEST}"
 	@echo "::endgroup::"

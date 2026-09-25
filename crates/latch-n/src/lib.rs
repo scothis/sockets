@@ -1,30 +1,23 @@
 #![no_main]
 
-use crate::bindings::{
-    componentized::sockets::latch,
-    exports::componentized::sockets::latch::{Decision, Operation},
-};
+use crate::bindings::exports::componentized::sockets::latch::{Decision, ErrorCode, Operation};
 
 pub fn authorize(
     operation: Operation,
-    authorizers: Vec<fn(&latch::Operation<'_>) -> Option<latch::Decision>>,
-) -> Option<Decision> {
-    let operation = operation.into();
+    authorizers: Vec<fn(&Operation<'_>) -> Result<Decision, ErrorCode>>,
+) -> Result<Decision, ErrorCode> {
     for authorize in authorizers {
-        match authorize(&operation) {
-            None => {}
-            Some(latch::Decision::Granted) => return Some(Decision::Granted),
-            Some(latch::Decision::Denied(error_code)) => {
-                return Some(Decision::Denied(error_code.into()))
-            }
+        match authorize(&operation)? {
+            Decision::Abstained => {}
+            Decision::Denied(error_code) => return Ok(Decision::Denied(error_code)),
         }
     }
-    None
+    Ok(Decision::Abstained)
 }
 
 pub mod bindings {
     wit_bindgen::generate!({
-        path: "../../wit",
+        path: "../../components/wit",
         world: "sockets-latch-n",
         pub_export_macro: true,
         merge_structurally_equal_types: true,

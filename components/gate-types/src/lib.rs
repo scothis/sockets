@@ -3,7 +3,10 @@
 use std::fmt::Display;
 
 use crate::componentized::sockets::latch::{
-    self, authorize, Decision::Denied, Operation, TcpSocketOperation, UdpSocketOperation,
+    authorize,
+    Decision::{Abstained, Denied},
+    ErrorCode as LatchErrorCode, Operation, SocketsErrorCode, TcpSocketOperation,
+    UdpSocketOperation,
 };
 use crate::exports::wasi::sockets::types::{
     Duration, ErrorCode, Guest, GuestTcpSocket, GuestUdpSocket, IpAddressFamily, IpSocketAddress,
@@ -11,6 +14,15 @@ use crate::exports::wasi::sockets::types::{
 };
 use crate::wasi::logging::logging::{log, Level};
 use crate::wasi::sockets::types;
+
+macro_rules! error {
+    ($dst:expr, $($arg:tt)*) => {
+        log(Level::Error, "componentized-gate", &format!($dst, $($arg)*));
+    };
+    ($dst:expr) => {
+        log(Level::Error, "componentized-gate", &format!($dst));
+    };
+}
 
 macro_rules! warn {
     ($dst:expr, $($arg:tt)*) => {
@@ -68,16 +80,26 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=socket&sektion=2>"]
     #[allow(async_fn_in_trait)]
     fn create(address_family: IpAddressFamily) -> Result<TcpSocket, ErrorCode> {
+        let call_summary = || {
+            format!(
+                "OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY={address_family}"
+            )
+        };
+
         match authorize(&Operation::TcpSocket(TcpSocketOperation::Create(
             componentized::sockets::latch::TcpSocketCreateArgs { address_family },
         ))) {
-            Some(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY={address_family}");
-                Err(error_code.into())
+            Ok(Denied(reason)) => {
+                warn!("Denied REASON={reason} {}", call_summary());
+                Err(reason)?
             }
-            _ => {
+            Ok(Abstained) => {
                 let socket = types::TcpSocket::create(address_family)?;
                 Ok(TcpSocket::new(GatedTcpSocket::new(socket)))
+            }
+            Err(code) => {
+                error!("Latch error CODE={code} {}", call_summary());
+                Err(code)?
             }
         }
     }
@@ -117,15 +139,22 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=bind&sektion=2&format=html>"]
     #[allow(async_fn_in_trait)]
     fn bind(&self, local_address: IpSocketAddress) -> Result<(), ErrorCode> {
+        let call_summary = || {
+            format!("OPERATION=wasi:sockets/types#tcp-socket.bind LOCAL-ADDRESS={local_address}")
+        };
         match authorize(&Operation::TcpSocket(TcpSocketOperation::Bind((
             &self.socket,
             componentized::sockets::latch::TcpSocketBindArgs { local_address },
         )))) {
-            Some(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} OPERATION=wasi:sockets/types#tcp-socket.bind LOCAL-ADDRESS={local_address}");
-                Err(error_code.into())
+            Ok(Denied(reason)) => {
+                warn!("Denied REASON={reason} {}", call_summary());
+                Err(reason)?
             }
-            _ => self.socket.bind(local_address).map_err(|val| val.into()),
+            Ok(Abstained) => self.socket.bind(local_address).map_err(|val| val.into()),
+            Err(code) => {
+                error!("Latch error CODE={code} {}", call_summary());
+                Err(code)?
+            }
         }
     }
 
@@ -165,15 +194,22 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?connect>"]
     #[allow(async_fn_in_trait)]
     async fn connect(&self, remote_address: IpSocketAddress) -> Result<(), ErrorCode> {
+        let call_summary = || {
+            format!("OPERATION=wasi:sockets/types#tcp-socket.bind REMOTE-ADDRESS={remote_address}")
+        };
         match authorize(&Operation::TcpSocket(TcpSocketOperation::Connect((
             &self.socket,
             componentized::sockets::latch::TcpSocketConnectArgs { remote_address },
         )))) {
-            Some(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} OPERATION=wasi:sockets/types#tcp-socket.bind REMOTE-ADDRESS={remote_address}");
+            Ok(Denied(error_code)) => {
+                warn!("Denied REASON={error_code} {}", call_summary());
                 Err(error_code.into())
             }
-            _ => self.socket.connect(remote_address).await,
+            Ok(Abstained) => self.socket.connect(remote_address).await,
+            Err(code) => {
+                error!("Latch error CODE={code} {}", call_summary());
+                Err(code)?
+            }
         }
     }
 
@@ -249,30 +285,37 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=accept&sektion=2>"]
     #[allow(async_fn_in_trait)]
     fn listen(&self) -> Result<wit_bindgen::rt::async_support::StreamReader<TcpSocket>, ErrorCode> {
+        let call_summary = || format!("OPERATION=wasi:sockets/types#tcp-socket.listen");
         match authorize(&Operation::TcpSocket(TcpSocketOperation::Listen((
             &self.socket,
         )))) {
-            Some(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} OPERATION=wasi:sockets/types#tcp-socket.listen");
+            Ok(Denied(error_code)) => {
+                warn!("Denied REASON={error_code} {}", call_summary());
                 Err(error_code.into())
             }
-            _ => match self.socket.listen() {
+            Ok(Abstained) => match self.socket.listen() {
                 Ok(mut stream) => {
                     let (mut stream_writer, stream_reader) = wit_stream::new::<TcpSocket>();
                     wit_bindgen::spawn_local(async move {
                         while let Some(socket) = stream.next().await {
+                            let call_summary = || {
+                                format!("OPERATION=wasi:sockets/types#tcp-socket.listen.connection")
+                            };
                             match authorize(&Operation::TcpSocket(
                                 TcpSocketOperation::ListenConnection((&socket,)),
                             )) {
-                                Some(Denied(error_code)) => {
-                                    trace!("Denied REASON={error_code} OPERATION=wasi:sockets/types#tcp-socket.listen.connection");
+                                Ok(Denied(error_code)) => {
+                                    trace!("Denied REASON={error_code} {}", call_summary());
                                 }
-                                _ => {
+                                Ok(Abstained) => {
                                     let socket = TcpSocket::new(GatedTcpSocket::new(socket));
                                     stream_writer
                                         .write_one(socket)
                                         .await
                                         .expect("stream write to succeed");
+                                }
+                                Err(code) => {
+                                    trace!("Latch error CODE={code} {}", call_summary());
                                 }
                             }
                         }
@@ -282,6 +325,10 @@ impl GuestTcpSocket for GatedTcpSocket {
                 }
                 Err(error_code) => Err(error_code),
             },
+            Err(code) => {
+                error!("Latch error CODE={code} {}", call_summary());
+                Err(code)?
+            }
         }
     }
 
@@ -610,16 +657,25 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=socket&sektion=2>"]
     #[allow(async_fn_in_trait)]
     fn create(address_family: IpAddressFamily) -> Result<UdpSocket, ErrorCode> {
+        let call_summary = || {
+            format!(
+                "OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY={address_family}"
+            )
+        };
         match authorize(&Operation::TcpSocket(TcpSocketOperation::Create(
             componentized::sockets::latch::TcpSocketCreateArgs { address_family },
         ))) {
-            Some(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY={address_family}");
+            Ok(Denied(error_code)) => {
+                warn!("Denied REASON={error_code} {}", call_summary());
                 Err(error_code.into())
             }
-            _ => {
+            Ok(Abstained) => {
                 let socket = types::UdpSocket::create(address_family)?;
                 Ok(UdpSocket::new(GatedUdpSocket::new(socket)))
+            }
+            Err(code) => {
+                error!("Latch error CODE={code} {}", call_summary());
+                Err(code)?
             }
         }
     }
@@ -645,15 +701,22 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=bind&sektion=2&format=html>"]
     #[allow(async_fn_in_trait)]
     fn bind(&self, local_address: IpSocketAddress) -> Result<(), ErrorCode> {
+        let call_summary = || {
+            format!("OPERATION=wasi:sockets/types#udp-socket.bind LOCAL-ADDRESS={local_address}")
+        };
         match authorize(&Operation::UdpSocket(UdpSocketOperation::Bind((
             &self.socket,
             componentized::sockets::latch::UdpSocketBindArgs { local_address },
         )))) {
-            Some(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} OPERATION=wasi:sockets/types#udp-socket.bind LOCAL-ADDRESS={local_address}");
-                Err(error_code.into())
+            Ok(Denied(reason)) => {
+                warn!("Denied REASON={reason} {}", call_summary());
+                Err(reason.into())
             }
-            _ => self.socket.bind(local_address),
+            Ok(Abstained) => self.socket.bind(local_address),
+            Err(code) => {
+                error!("Latch error CODE={code} {}", call_summary());
+                Err(code)?
+            }
         }
     }
 
@@ -695,15 +758,24 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?connect>"]
     #[allow(async_fn_in_trait)]
     fn connect(&self, remote_address: IpSocketAddress) -> Result<(), ErrorCode> {
+        let call_summary = || {
+            format!(
+                "OPERATION=wasi:sockets/types#udp-socket.connect REMOTE-ADDRESS={remote_address}"
+            )
+        };
         match authorize(&Operation::UdpSocket(UdpSocketOperation::Connect((
             &self.socket,
             componentized::sockets::latch::UdpSocketConnectArgs { remote_address },
         )))) {
-            Some(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} OPERATION=wasi:sockets/types#udp-socket.connect REMOTE-ADDRESS={remote_address}");
+            Ok(Denied(error_code)) => {
+                warn!("Denied REASON={error_code} {}", call_summary());
                 Err(error_code.into())
             }
-            _ => self.socket.connect(remote_address),
+            Ok(Abstained) => self.socket.connect(remote_address),
+            Err(code) => {
+                error!("Latch error CODE={code} {}", call_summary());
+                Err(code)?
+            }
         }
     }
 
@@ -775,6 +847,13 @@ impl GuestUdpSocket for GatedUdpSocket {
         data: Vec<u8>,
         remote_address: Option<IpSocketAddress>,
     ) -> Result<(), ErrorCode> {
+        let call_summary = || {
+            format!(
+                "OPERATION=wasi:sockets/types#udp-socket.send DATA-LENGTH={} REMOTE-ADDRESS={}",
+                data.len(),
+                DisplayOption(remote_address)
+            )
+        };
         match authorize(&Operation::UdpSocket(UdpSocketOperation::Send((
             &self.socket,
             componentized::sockets::latch::UdpSocketSendArgs {
@@ -782,11 +861,15 @@ impl GuestUdpSocket for GatedUdpSocket {
                 remote_address,
             },
         )))) {
-            Some(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} OPERATION=wasi:sockets/types#udp-socket.send DATA-LENGTH={} REMOTE-ADDRESS={}", data.len(), DisplayOption(remote_address));
+            Ok(Denied(error_code)) => {
+                warn!("Denied REASON={error_code} {}", call_summary());
                 Err(error_code.into())
             }
-            _ => self.socket.send(data, remote_address).await,
+            Ok(Abstained) => self.socket.send(data, remote_address).await,
+            Err(code) => {
+                error!("Latch error CODE={code} {}", call_summary());
+                Err(code)?
+            }
         }
     }
 
@@ -817,6 +900,13 @@ impl GuestUdpSocket for GatedUdpSocket {
     async fn receive(&self) -> Result<(Vec<u8>, IpSocketAddress), ErrorCode> {
         match self.socket.receive().await {
             Ok((data, remote_address)) => {
+                let call_summary = || {
+                    format!(
+                        "OPERATION=wasi:sockets/types#udp-socket.receive DATA-LENGTH={} REMOTE-ADDRESS={}",
+                        data.len(),
+                        remote_address
+                    )
+                };
                 match authorize(&Operation::UdpSocket(UdpSocketOperation::Receive((
                     &self.socket,
                     componentized::sockets::latch::UdpSocketReceiveReturns {
@@ -824,11 +914,15 @@ impl GuestUdpSocket for GatedUdpSocket {
                         remote_address,
                     },
                 )))) {
-                    Some(Denied(error_code)) => {
-                        warn!("Denied REASON={error_code} OPERATION=wasi:sockets/types#udp-socket.receive DATA-LENGTH={} REMOTE-ADDRESS={}", data.len(), remote_address);
+                    Ok(Denied(error_code)) => {
+                        warn!("Denied REASON={error_code} {}", call_summary());
                         Err(error_code.into())
                     }
-                    _ => Ok((data, remote_address)),
+                    Ok(Abstained) => Ok((data, remote_address)),
+                    Err(code) => {
+                        error!("Latch error CODE={code} {}", call_summary());
+                        Err(code)?
+                    }
                 }
             }
             Err(error_code) => Err(error_code),
@@ -932,12 +1026,34 @@ impl GuestUdpSocket for GatedUdpSocket {
     }
 }
 
-impl From<latch::ErrorCode> for ErrorCode {
-    fn from(value: latch::ErrorCode) -> Self {
+impl From<SocketsErrorCode> for ErrorCode {
+    fn from(value: SocketsErrorCode) -> Self {
         match value {
-            latch::ErrorCode::AccessDenied => ErrorCode::AccessDenied,
-            latch::ErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
-            latch::ErrorCode::Other(error) => ErrorCode::Other(error),
+            SocketsErrorCode::AccessDenied => Self::AccessDenied,
+            SocketsErrorCode::InvalidArgument => Self::InvalidArgument,
+            SocketsErrorCode::Other(message) => Self::Other(message),
+        }
+    }
+}
+
+impl From<LatchErrorCode> for ErrorCode {
+    fn from(value: LatchErrorCode) -> Self {
+        match value {
+            LatchErrorCode::Other(Some(message)) => {
+                Self::Other(Some(format!("latch-error: {message}")))
+            }
+            LatchErrorCode::Other(None) => Self::Other(Some("latch-error".to_string())),
+        }
+    }
+}
+
+impl std::fmt::Display for SocketsErrorCode {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::AccessDenied => f.write_str("access-denied"),
+            Self::InvalidArgument => f.write_str("invalid-argument"),
+            Self::Other(Some(message)) => f.write_fmt(format_args!("other: {message}")),
+            Self::Other(None) => f.write_str("other"),
         }
     }
 }
@@ -976,20 +1092,6 @@ impl Display for types::IpSocketAddress {
     }
 }
 
-impl Display for latch::ErrorCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{}",
-            match self {
-                latch::ErrorCode::AccessDenied => "access-denied".to_string(),
-                latch::ErrorCode::InvalidArgument => "invalid-argument".to_string(),
-                latch::ErrorCode::Other(None) => "other".to_string(),
-                latch::ErrorCode::Other(Some(error_code)) => format!("other<{error_code}>"),
-            }
-        ))
-    }
-}
-
 struct DisplayOption<T>(Option<T>);
 
 // Implement Display for your local wrapper
@@ -1003,7 +1105,7 @@ impl<T: Display> Display for DisplayOption<T> {
 }
 
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "../wit",
     world: "gated-types",
     merge_structurally_equal_types: true,
     generate_all

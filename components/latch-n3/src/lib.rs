@@ -2,14 +2,14 @@
 
 use latch_n::bindings::componentized::sockets::{latch as latch0, latch1, latch2};
 use latch_n::bindings::exports::componentized::sockets::latch::{
-    Decision, Guest as Latch, Operation,
+    Decision, ErrorCode, Guest as Latch, Operation,
 };
 
 struct LatchN3 {}
 
 impl Latch for LatchN3 {
     #[allow(async_fn_in_trait)]
-    fn authorize(operation: Operation<'_>) -> Option<Decision> {
+    fn authorize(operation: Operation<'_>) -> Result<Decision, ErrorCode> {
         let authorizers = vec![latch0::authorize, latch1::authorize, latch2::authorize];
         latch_n::authorize(operation, authorizers)
     }

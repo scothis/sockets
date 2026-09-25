@@ -6,7 +6,7 @@ use std::sync::{Mutex, OnceLock};
 
 use crate::componentized::sockets::latch;
 use crate::exports::componentized::sockets::latch::{
-    Decision, ErrorCode, Guest as Latch, IpAddress, IpSocketAddress, Operation,
+    Decision, ErrorCode, Guest as Latch, IpAddress, IpSocketAddress, Operation, SocketsErrorCode,
 };
 
 struct State {
@@ -50,57 +50,56 @@ static STATE: OnceLock<State> = OnceLock::new();
 struct ConnectToLookedUpAddressLatch {}
 
 impl Latch for ConnectToLookedUpAddressLatch {
-    fn authorize(operation: Operation) -> Option<Decision> {
+    fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
         let operation = operation.into();
-        let decision = match latch::authorize(&operation) {
-            Some(latch::Decision::Granted) => Some(Decision::Granted),
-            Some(latch::Decision::Denied(error_code)) => Some(Decision::Denied(error_code.into())),
-            None => match &operation {
-                latch::Operation::IpNameLookup(_) => None,
+        let decision = match latch::authorize(&operation)? {
+            latch::Decision::Denied(error_code) => Ok(Decision::Denied(error_code.into())),
+            latch::Decision::Abstained => match &operation {
+                latch::Operation::IpNameLookup(_) => Ok(Decision::Abstained),
                 latch::Operation::TcpSocket(tcp_socket_operation) => match tcp_socket_operation {
-                    latch::TcpSocketOperation::Create(_) => None,
-                    latch::TcpSocketOperation::Bind(_) => None,
+                    latch::TcpSocketOperation::Create(_) => Ok(Decision::Abstained),
+                    latch::TcpSocketOperation::Bind(_) => Ok(Decision::Abstained),
                     latch::TcpSocketOperation::Connect((_, tcp_socket_connect_args)) => {
                         match State::is_granted_socket_address(
                             tcp_socket_connect_args.remote_address,
                         ) {
-                            true => None,
-                            false => Some(Decision::Denied(ErrorCode::AccessDenied)),
+                            true => Ok(Decision::Abstained),
+                            false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
                         }
                     }
-                    latch::TcpSocketOperation::Listen(_) => None,
-                    latch::TcpSocketOperation::ListenConnection(_) => None,
-                    latch::TcpSocketOperation::Send(_) => None,
-                    latch::TcpSocketOperation::Receive(_) => None,
+                    latch::TcpSocketOperation::Listen(_) => Ok(Decision::Abstained),
+                    latch::TcpSocketOperation::ListenConnection(_) => Ok(Decision::Abstained),
+                    latch::TcpSocketOperation::Send(_) => Ok(Decision::Abstained),
+                    latch::TcpSocketOperation::Receive(_) => Ok(Decision::Abstained),
                 },
                 latch::Operation::UdpSocket(udp_socket_operation) => match udp_socket_operation {
-                    latch::UdpSocketOperation::Create(_) => None,
-                    latch::UdpSocketOperation::Bind(_) => None,
+                    latch::UdpSocketOperation::Create(_) => Ok(Decision::Abstained),
+                    latch::UdpSocketOperation::Bind(_) => Ok(Decision::Abstained),
                     latch::UdpSocketOperation::Connect((_, udp_socket_connect_args)) => {
                         match State::is_granted_socket_address(
                             udp_socket_connect_args.remote_address,
                         ) {
-                            true => None,
-                            false => Some(Decision::Denied(ErrorCode::AccessDenied)),
+                            true => Ok(Decision::Abstained),
+                            false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
                         }
                     }
                     latch::UdpSocketOperation::Send((_, udp_socket_send_args)) => {
                         match udp_socket_send_args.remote_address {
                             Some(remote_address) => {
                                 match State::is_granted_socket_address(remote_address) {
-                                    true => None,
-                                    false => Some(Decision::Denied(ErrorCode::AccessDenied)),
+                                    true => Ok(Decision::Abstained),
+                                    false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
                                 }
                             }
-                            None => None,
+                            None => Ok(Decision::Abstained),
                         }
                     }
-                    latch::UdpSocketOperation::Receive(_) => None,
+                    latch::UdpSocketOperation::Receive(_) => Ok(Decision::Abstained),
                 },
             },
         };
 
-        if !matches!(decision, Some(Decision::Denied(_))) {
+        if !matches!(decision, Ok(Decision::Denied(_))) {
             if let latch::Operation::IpNameLookup(
                 latch::IpNameLookupOperation::ResolveAddressesReturn(
                     latch::ResolveAddressesReturnsItem { ip_address },
@@ -143,7 +142,7 @@ impl Hash for IpAddress {
 }
 
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "../wit",
     world: "sockets-latch",
     merge_structurally_equal_types: true,
     generate_all

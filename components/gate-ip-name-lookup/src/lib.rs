@@ -1,14 +1,27 @@
 #![no_main]
 
-use std::fmt::Display;
-
-use crate::componentized::sockets::latch::{
-    self, authorize, Decision::Denied, IpNameLookupOperation, Operation, ResolveAddressesArgs,
-    ResolveAddressesReturnsItem,
+use crate::{
+    componentized::sockets::latch::{
+        authorize,
+        Decision::{Abstained, Denied},
+        ErrorCode as LatchErrorCode, IpNameLookupOperation, Operation, ResolveAddressesArgs,
+        ResolveAddressesReturnsItem, SocketsErrorCode,
+    },
+    exports::wasi::sockets::ip_name_lookup::{ErrorCode, Guest},
+    wasi::{
+        logging::logging::{log, Level},
+        sockets::{ip_name_lookup, types},
+    },
 };
-use crate::exports::wasi::sockets::ip_name_lookup::{ErrorCode, Guest};
-use crate::wasi::logging::logging::{log, Level};
-use crate::wasi::sockets::{ip_name_lookup, types};
+
+macro_rules! error {
+    ($dst:expr, $($arg:tt)*) => {
+        log(Level::Error, "componentized-gate", &format!($dst, $($arg)*));
+    };
+    ($dst:expr) => {
+        log(Level::Error, "componentized-gate", &format!($dst));
+    };
+}
 
 macro_rules! warn {
     ($dst:expr, $($arg:tt)*) => {
@@ -53,61 +66,99 @@ impl Guest for GatedIpNameLookup {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=getaddrinfo&sektion=3>"]
     #[allow(async_fn_in_trait)]
     async fn resolve_addresses(name: String) -> Result<Vec<types::IpAddress>, ErrorCode> {
+        let call_summary =
+            || format!("OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME={name}");
         match authorize(&Operation::IpNameLookup(
             IpNameLookupOperation::ResolveAddresses(ResolveAddressesArgs { name: name.clone() }),
         )) {
-            Some(Denied(code)) => {
-                warn!("Denied REASON={code} OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME={name}");
-                Err(code.into())
+            Ok(Denied(reason)) => {
+                warn!("Denied REASON={reason} {}", call_summary());
+                Err(reason)?
             }
-            _ => ip_name_lookup::resolve_addresses(name.clone())
-                .await
-                .map(|addresses| 
-                    addresses
-                        .into_iter()
-                        .filter(|ip_address| match authorize(
-                            &Operation::IpNameLookup(IpNameLookupOperation::ResolveAddressesReturn(ResolveAddressesReturnsItem { ip_address: *ip_address }))
-                        ) {
-                            Some(Denied(code)) => {
-                                trace!("Denied REASON={code} OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME={name}");
-                                false
-                            }
-                            _ => true,
-                        })
-                        .collect()
-                ),
+            Ok(Abstained) => {
+                ip_name_lookup::resolve_addresses(name.clone())
+                    .await
+                    .map(|addresses| {
+                        addresses
+                            .into_iter()
+                            .filter(|ip_address| {
+                                match authorize(&Operation::IpNameLookup(
+                                    IpNameLookupOperation::ResolveAddressesReturn(
+                                        ResolveAddressesReturnsItem {
+                                            ip_address: *ip_address,
+                                        },
+                                    ),
+                                )) {
+                                    Ok(Denied(reason)) => {
+                                        trace!("Denied REASON={reason} {}", call_summary());
+                                        false
+                                    }
+                                    _ => true,
+                                }
+                            })
+                            .collect()
+                    })
+            }
+            Err(code) => {
+                error!("Latch error CODE={code} OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME={name}");
+                Err(code)?
+            }
         }
     }
 }
 
-impl From<latch::ErrorCode> for ErrorCode {
-    fn from(value: latch::ErrorCode) -> Self {
-        match value {
-            latch::ErrorCode::AccessDenied => ErrorCode::AccessDenied,
-            latch::ErrorCode::InvalidArgument => ErrorCode::InvalidArgument,
-            latch::ErrorCode::Other(error) => ErrorCode::Other(error),
-        }
-    }
-}
-
-impl Display for latch::ErrorCode {
+impl std::fmt::Display for SocketsErrorCode {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.write_fmt(format_args!(
-            "{}",
-            match self {
-                latch::ErrorCode::AccessDenied => "access-denied".to_string(),
-                latch::ErrorCode::InvalidArgument => "invalid-argument".to_string(),
-                latch::ErrorCode::Other(None) => "other".to_string(),
-                latch::ErrorCode::Other(Some(error_code)) => format!("other<{error_code}>"),
-            }
-        ))
+        match self {
+            Self::AccessDenied => f.write_str("access-denied"),
+            Self::InvalidArgument => f.write_str("invalid-argument"),
+            Self::Other(Some(message)) => f.write_fmt(format_args!("other: {message}")),
+            Self::Other(None) => f.write_str("other"),
+        }
     }
 }
 
+impl std::fmt::Display for types::IpAddress {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let address: std::net::IpAddr = (*self).into();
+        f.write_fmt(format_args!("{address}"))
+    }
+}
 
+impl Into<std::net::IpAddr> for types::IpAddress {
+    fn into(self) -> std::net::IpAddr {
+        match self {
+            Self::Ipv4(v4) => std::net::IpAddr::V4(std::net::Ipv4Addr::new(v4.0, v4.1, v4.2, v4.3)),
+            Self::Ipv6(v6) => std::net::IpAddr::V6(std::net::Ipv6Addr::new(
+                v6.0, v6.1, v6.2, v6.3, v6.4, v6.5, v6.6, v6.7,
+            )),
+        }
+    }
+}
+
+impl From<SocketsErrorCode> for ErrorCode {
+    fn from(value: SocketsErrorCode) -> Self {
+        match value {
+            SocketsErrorCode::AccessDenied => Self::AccessDenied,
+            SocketsErrorCode::InvalidArgument => Self::InvalidArgument,
+            SocketsErrorCode::Other(message) => Self::Other(message),
+        }
+    }
+}
+
+impl From<LatchErrorCode> for ErrorCode {
+    fn from(value: LatchErrorCode) -> Self {
+        match value {
+            LatchErrorCode::Other(Some(message)) => {
+                Self::Other(Some(format!("latch-error: {message}")))
+            }
+            LatchErrorCode::Other(None) => Self::Other(Some("latch-error".to_string())),
+        }
+    }
+}
 
 wit_bindgen::generate!({
-    path: "../../wit",
+    path: "../wit",
     world: "gated-ip-name-lookup",
     merge_structurally_equal_types: true,
     generate_all
