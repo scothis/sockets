@@ -1,7 +1,6 @@
 #![no_main]
 
 use std::fmt::Display;
-use std::future::Future;
 
 use crate::componentized::sockets::latch::{
     authorize,
@@ -31,15 +30,6 @@ macro_rules! warn {
     };
     ($dst:expr) => {
         log(Level::Warn, "componentized-gate", &format!($dst));
-    };
-}
-
-macro_rules! trace {
-    ($dst:expr, $($arg:tt)*) => {
-        log(Level::Trace, "componentized-gate", &format!($dst, $($arg)*));
-    };
-    ($dst:expr) => {
-        log(Level::Trace, "componentized-gate", &format!($dst));
     };
 }
 

@@ -1,4 +1,4 @@
 package componentized:sockets;
 
-export new componentized:gate-ip-name-lookup { ... }...;
-export new componentized:gate-types{ ... }...;
+export new local:gate-ip-name-lookup { ... }...;
+export new local:gate-types{ ... }...;
