@@ -1,9 +1,10 @@
 #![no_main]
 
-use latch_n::bindings::componentized::sockets::{latch as latch0, latch1, latch2, latch3};
+use latch_n::bindings::componentized::sockets::latch as latch0;
 use latch_n::bindings::exports::componentized::sockets::latch::{
     Decision, ErrorCode, Guest as Latch, Operation,
 };
+use latch_n::bindings::{latch1, latch2, latch3};
 
 struct LatchN4 {}
 

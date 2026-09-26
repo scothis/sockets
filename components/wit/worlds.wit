@@ -1,6 +1,5 @@
 package componentized:sockets-components;
 
-
 world gated-ip-name-lookup {
     import componentized:sockets/latch@0.0.0-dev;
     import wasi:config/store@0.2.0-rc.1;
@@ -26,8 +25,8 @@ world sockets-latch {
 world sockets-latch-n {
     export componentized:sockets/latch@0.0.0-dev;
     import componentized:sockets/latch@0.0.0-dev;
-    import componentized:sockets/latch1@0.0.0-dev;
-    import componentized:sockets/latch2@0.0.0-dev;
-    import componentized:sockets/latch3@0.0.0-dev;
-    import componentized:sockets/latch4@0.0.0-dev;
+    import latch1: componentized:sockets/latch@0.0.0-dev;
+    import latch2: componentized:sockets/latch@0.0.0-dev;
+    import latch3: componentized:sockets/latch@0.0.0-dev;
+    import latch4: componentized:sockets/latch@0.0.0-dev;
 }

@@ -100,28 +100,3 @@ interface latch {
 
     authorize: func(operation: operation) -> result<decision, error-code>;
 }
-
-
-interface latch1 {
-    use latch.{error-code, operation, decision};
-
-    authorize: func(operation: operation) -> result<decision, error-code>;
-}
-
-interface latch2 {
-    use latch.{error-code, operation, decision};
-
-    authorize: func(operation: operation) -> result<decision, error-code>;
-}
-
-interface latch3 {
-    use latch.{error-code, operation, decision};
-
-    authorize: func(operation: operation) -> result<decision, error-code>;
-}
-
-interface latch4 {
-    use latch.{error-code, operation, decision};
-
-    authorize: func(operation: operation) -> result<decision, error-code>;
-}
