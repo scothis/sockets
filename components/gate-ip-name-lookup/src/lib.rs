@@ -1,4 +1,4 @@
-#![no_main]
+#![cfg_attr(not(test), no_main)]
 
 use crate::{
     componentized::sockets::latch::{
@@ -100,7 +100,11 @@ impl Guest for GatedIpNameLookup {
                     })
             }
             Err(code) => {
-                error!("Latch error CODE={code} OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME={name}");
+                error!(
+                    "Latch error CODE={code} {summary}",
+                    code = DisplayLatchError(&code),
+                    summary = call_summary()
+                );
                 Err(code)?
             }
         }
@@ -112,8 +116,18 @@ impl std::fmt::Display for SocketsErrorCode {
         match self {
             Self::AccessDenied => f.write_str("access-denied"),
             Self::InvalidArgument => f.write_str("invalid-argument"),
-            Self::Other(Some(message)) => f.write_fmt(format_args!("other: {message}")),
+            Self::Other(Some(message)) => f.write_str(message),
             Self::Other(None) => f.write_str("other"),
+        }
+    }
+}
+
+struct DisplayLatchError<'a>(&'a LatchErrorCode);
+impl std::fmt::Display for DisplayLatchError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self(LatchErrorCode::Other(Some(message))) => f.write_str(message),
+            Self(LatchErrorCode::Other(None)) => f.write_str("other"),
         }
     }
 }

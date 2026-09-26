@@ -1,6 +1,4 @@
-#![no_main]
-
-use std::fmt::Display;
+#![cfg_attr(not(test), no_main)]
 
 use wit_bindgen::StreamReader;
 
@@ -91,7 +89,11 @@ impl GuestTcpSocket for GatedTcpSocket {
                 Ok(TcpSocket::new(GatedTcpSocket::new(socket)))
             }
             Err(code) => {
-                error!("Latch error CODE={code} {}", call_summary());
+                error!(
+                    "Latch error CODE={code} {summary}",
+                    code = DisplayLatchError(&code),
+                    summary = call_summary()
+                );
                 Err(code)?
             }
         }
@@ -145,7 +147,11 @@ impl GuestTcpSocket for GatedTcpSocket {
             }
             Ok(Abstained) => self.socket.bind(local_address).map_err(|val| val.into()),
             Err(code) => {
-                error!("Latch error CODE={code} {}", call_summary());
+                error!(
+                    "Latch error CODE={code} {summary}",
+                    code = DisplayLatchError(&code),
+                    summary = call_summary()
+                );
                 Err(code)?
             }
         }
@@ -188,7 +194,9 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[allow(async_fn_in_trait)]
     async fn connect(&self, remote_address: IpSocketAddress) -> Result<(), ErrorCode> {
         let call_summary = || {
-            format!("OPERATION=wasi:sockets/types#tcp-socket.bind REMOTE-ADDRESS={remote_address}")
+            format!(
+                "OPERATION=wasi:sockets/types#tcp-socket.connect REMOTE-ADDRESS={remote_address}"
+            )
         };
         match authorize(&Operation::TcpSocket(TcpSocketOperation::Connect((
             &self.socket,
@@ -200,7 +208,11 @@ impl GuestTcpSocket for GatedTcpSocket {
             }
             Ok(Abstained) => self.socket.connect(remote_address).await,
             Err(code) => {
-                error!("Latch error CODE={code} {}", call_summary());
+                error!(
+                    "Latch error CODE={code} {summary}",
+                    code = DisplayLatchError(&code),
+                    summary = call_summary()
+                );
                 Err(code)?
             }
         }
@@ -311,7 +323,11 @@ impl GuestTcpSocket for GatedTcpSocket {
                                     }
                                 }
                                 Err(code) => {
-                                    error!("Latch error CODE={code} {}", call_summary());
+                                    error!(
+                                        "Latch error CODE={code} {summary}",
+                                        code = DisplayLatchError(&code),
+                                        summary = call_summary()
+                                    );
                                 }
                             }
                         }
@@ -320,7 +336,11 @@ impl GuestTcpSocket for GatedTcpSocket {
                 Ok(rx)
             }
             Err(code) => {
-                error!("Latch error CODE={code} {}", call_summary());
+                error!(
+                    "Latch error CODE={code} {summary}",
+                    code = DisplayLatchError(&code),
+                    summary = call_summary()
+                );
                 Err(code)?
             }
         }
@@ -652,7 +672,11 @@ impl GuestUdpSocket for GatedUdpSocket {
                 Ok(UdpSocket::new(GatedUdpSocket::new(socket)))
             }
             Err(code) => {
-                error!("Latch error CODE={code} {}", call_summary());
+                error!(
+                    "Latch error CODE={code} {summary}",
+                    code = DisplayLatchError(&code),
+                    summary = call_summary()
+                );
                 Err(code)?
             }
         }
@@ -692,7 +716,11 @@ impl GuestUdpSocket for GatedUdpSocket {
             }
             Ok(Abstained) => self.socket.bind(local_address),
             Err(code) => {
-                error!("Latch error CODE={code} {}", call_summary());
+                error!(
+                    "Latch error CODE={code} {summary}",
+                    code = DisplayLatchError(&code),
+                    summary = call_summary()
+                );
                 Err(code)?
             }
         }
@@ -751,7 +779,11 @@ impl GuestUdpSocket for GatedUdpSocket {
             }
             Ok(Abstained) => self.socket.connect(remote_address),
             Err(code) => {
-                error!("Latch error CODE={code} {}", call_summary());
+                error!(
+                    "Latch error CODE={code} {summary}",
+                    code = DisplayLatchError(&code),
+                    summary = call_summary()
+                );
                 Err(code)?
             }
         }
@@ -845,7 +877,11 @@ impl GuestUdpSocket for GatedUdpSocket {
             }
             Ok(Abstained) => self.socket.send(data, remote_address).await,
             Err(code) => {
-                error!("Latch error CODE={code} {}", call_summary());
+                error!(
+                    "Latch error CODE={code} {summary}",
+                    code = DisplayLatchError(&code),
+                    summary = call_summary()
+                );
                 Err(code)?
             }
         }
@@ -1030,13 +1066,23 @@ impl std::fmt::Display for SocketsErrorCode {
         match self {
             Self::AccessDenied => f.write_str("access-denied"),
             Self::InvalidArgument => f.write_str("invalid-argument"),
-            Self::Other(Some(message)) => f.write_fmt(format_args!("other: {message}")),
+            Self::Other(Some(message)) => f.write_str(message),
             Self::Other(None) => f.write_str("other"),
         }
     }
 }
 
-impl Display for types::IpAddressFamily {
+struct DisplayLatchError<'a>(&'a LatchErrorCode);
+impl std::fmt::Display for DisplayLatchError<'_> {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self(LatchErrorCode::Other(Some(message))) => f.write_str(message),
+            Self(LatchErrorCode::Other(None)) => f.write_str("other"),
+        }
+    }
+}
+
+impl std::fmt::Display for types::IpAddressFamily {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "{}",
@@ -1048,7 +1094,7 @@ impl Display for types::IpAddressFamily {
     }
 }
 
-impl Display for types::IpSocketAddress {
+impl std::fmt::Display for types::IpSocketAddress {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.write_fmt(format_args!(
             "{}",
@@ -1073,7 +1119,7 @@ impl Display for types::IpSocketAddress {
 struct DisplayOption<T>(Option<T>);
 
 // Implement Display for your local wrapper
-impl<T: Display> Display for DisplayOption<T> {
+impl<T: std::fmt::Display> std::fmt::Display for DisplayOption<T> {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         match &self.0 {
             Some(value) => write!(f, "some<{}>", value),

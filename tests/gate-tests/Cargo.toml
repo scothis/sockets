@@ -1,0 +1,12 @@
+[package]
+name = "gate-tests"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+[dependencies]
+tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "sync", "time"] }
+wac-graph = "0.11"
+wasmtime = { version = "49", features = ["component-model-async"] }
+wasmtime-wasi = { version = "49", features = ["p3"] }

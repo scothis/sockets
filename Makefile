@@ -21,8 +21,8 @@ clean:
 	rm -rf lib/*.wasm.md
 
 .PHONY: test
-test:
-	@echo "TODO add tests"
+test: components
+	cargo test --workspace
 
 # cargo target for a component
 cargo_target = $(if $(filter $1,$(WASIP3_COMPONENTS)),wasm32-wasip3,wasm32-unknown-unknown)
