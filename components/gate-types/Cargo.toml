@@ -13,3 +13,8 @@ rust-target = "wasm32-wasip3"
 
 [dependencies]
 wit-bindgen = { workspace = true }
+
+[dev-dependencies]
+gate-tests = { workspace = true }
+tokio = { workspace = true }
+wasmtime = { workspace = true }

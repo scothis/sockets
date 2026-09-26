@@ -2,7 +2,7 @@ use gate_tests::{Harness, HostLatch, LogEntry};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn resolve_addresses_abstained() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate").build().await?;
+    let mut gate = Harness::new("gate-ip-name-lookup").build().await?;
     let result = gate
         .run(async |accessor, gate| {
             let lookup = gate.wasi_sockets_ip_name_lookup();
@@ -24,7 +24,7 @@ async fn resolve_addresses_abstained() -> wasmtime::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn resolve_addresses_denied() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-ip-name-lookup")
         .host_latch(HostLatch::deny(&["ip-name-lookup.resolve-addresses"]))
         .build()
         .await?;

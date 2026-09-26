@@ -10,7 +10,7 @@ use tokio::time::timeout;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn create_abstained() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate").build().await?;
+    let mut gate = Harness::new("gate-types").build().await?;
     let result = gate
         .run(async |accessor, gate| {
             let udp = gate.wasi_sockets_types().udp_socket();
@@ -25,7 +25,7 @@ async fn create_abstained() -> wasmtime::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn create_denied() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .host_latch(HostLatch::deny(&["udp-socket.create"]))
         .build()
         .await?;
@@ -48,7 +48,7 @@ async fn create_denied() -> wasmtime::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn create_latch_error() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .host_latch(HostLatch::error("boom"))
         .build()
         .await?;
@@ -72,7 +72,7 @@ async fn create_latch_error() -> wasmtime::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn bind_denied_by_latch_component() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .latch("latch-deny-bind")
         .build()
         .await?;
@@ -103,7 +103,7 @@ async fn connect_abstained() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 
-    let mut gate = Harness::new("gate").build().await?;
+    let mut gate = Harness::new("gate-types").build().await?;
     let result = gate
         .run(async |accessor, gate| {
             let udp = gate.wasi_sockets_types().udp_socket();
@@ -129,7 +129,7 @@ async fn connect_denied_by_latch_component() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .latch("latch-deny-connect")
         .build()
         .await?;
@@ -159,7 +159,7 @@ async fn send_abstained() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 
-    let mut gate = Harness::new("gate").build().await?;
+    let mut gate = Harness::new("gate-types").build().await?;
     let (result, local_address) = gate
         .run(async |accessor, gate| {
             let udp = gate.wasi_sockets_types().udp_socket();
@@ -198,7 +198,7 @@ async fn send_denied() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .host_latch(HostLatch::deny(&["udp-socket.send"]))
         .build()
         .await?;
@@ -239,7 +239,7 @@ async fn send_denied() -> wasmtime::Result<()> {
 async fn receive_abstained() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
 
-    let mut gate = Harness::new("gate").build().await?;
+    let mut gate = Harness::new("gate-types").build().await?;
     let result = gate
         .run(async |accessor, gate| {
             let udp = gate.wasi_sockets_types().udp_socket();
@@ -271,7 +271,7 @@ async fn receive_abstained() -> wasmtime::Result<()> {
 async fn receive_denied() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
 
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .host_latch(HostLatch::deny(&["udp-socket.receive"]))
         .build()
         .await?;
@@ -306,7 +306,7 @@ async fn receive_denied() -> wasmtime::Result<()> {
 async fn receive_latch_error() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
 
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .host_latch(HostLatch::new(|auth| {
             if auth.operation == "udp-socket.receive" {
                 Err(LatchErrorCode::Other(Some("boom".to_string())))

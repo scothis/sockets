@@ -9,7 +9,7 @@ use tokio::time::timeout;
 
 #[tokio::test(flavor = "multi_thread")]
 async fn create_abstained() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate").build().await?;
+    let mut gate = Harness::new("gate-types").build().await?;
     let result = gate
         .run(async |accessor, gate| {
             let tcp = gate.wasi_sockets_types().tcp_socket();
@@ -24,7 +24,7 @@ async fn create_abstained() -> wasmtime::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn create_denied() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .host_latch(HostLatch::deny(&["tcp-socket.create"]))
         .build()
         .await?;
@@ -46,7 +46,7 @@ async fn create_denied() -> wasmtime::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn create_latch_error() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .host_latch(HostLatch::error("boom"))
         .build()
         .await?;
@@ -70,7 +70,7 @@ async fn create_latch_error() -> wasmtime::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn bind_denied_by_latch_component() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .latch("latch-deny-bind")
         .build()
         .await?;
@@ -101,7 +101,7 @@ async fn connect_abstained() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
-    let mut gate = Harness::new("gate").build().await?;
+    let mut gate = Harness::new("gate-types").build().await?;
     let result = gate
         .run(async |accessor, gate| {
             let tcp = gate.wasi_sockets_types().tcp_socket();
@@ -128,7 +128,7 @@ async fn connect_denied_by_latch_component() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .latch("latch-deny-connect")
         .build()
         .await?;
@@ -161,7 +161,7 @@ async fn connect_denied_by_latch_component() -> wasmtime::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn listen_denied() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .host_latch(HostLatch::deny(&["tcp-socket.listen"]))
         .build()
         .await?;
@@ -193,7 +193,7 @@ async fn listen_denied() -> wasmtime::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn listen_forwards_connections() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate").build().await?;
+    let mut gate = Harness::new("gate-types").build().await?;
     gate.run(async |accessor, gate| {
         let tcp = gate.wasi_sockets_types().tcp_socket();
         let socket = tcp
@@ -231,7 +231,7 @@ async fn listen_forwards_connections() -> wasmtime::Result<()> {
 
 #[tokio::test(flavor = "multi_thread")]
 async fn listen_connection_denied() -> wasmtime::Result<()> {
-    let mut gate = Harness::new("gate")
+    let mut gate = Harness::new("gate-types")
         .host_latch(HostLatch::deny(&["tcp-socket.listen.connection"]))
         .build()
         .await?;

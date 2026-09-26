@@ -28,6 +28,7 @@ use crate::bindings::componentized::sockets::latch::{
     self, Decision, ErrorCode as LatchErrorCode, Operation, SocketsErrorCode, TcpSocketOperation,
     UdpSocketOperation,
 };
+use crate::bindings::exports::wasi::sockets::{ip_name_lookup, types};
 use crate::bindings::wasi::logging::logging;
 
 pub mod bindings {
@@ -435,13 +436,26 @@ impl Harness {
                 recorder: recorder.clone(),
             },
         );
-        let instance = bindings::Gate::instantiate_async(&mut store, &component, &linker)
+        let instance_pre = linker.instantiate_pre(&component)?;
+        let instance = instance_pre
+            .instantiate_async(&mut store)
             .await
             .with_context(|| format!("failed to instantiate {}", self.gate))?;
+        let exports = Exports {
+            name: self.gate,
+            types: match types::GuestIndices::new(&instance_pre) {
+                Ok(indices) => Some(indices.load(&mut store, &instance)?),
+                Err(_) => None,
+            },
+            ip_name_lookup: match ip_name_lookup::GuestIndices::new(&instance_pre) {
+                Ok(indices) => Some(indices.load(&mut store, &instance)?),
+                Err(_) => None,
+            },
+        };
 
         Ok(Gate {
             store,
-            instance,
+            exports,
             recorder,
         })
     }
@@ -490,10 +504,36 @@ fn plug(name: &str, socket: Vec<u8>, plug: Vec<u8>) -> Result<Vec<u8>> {
     Ok(graph.encode(EncodeOptions::default())?)
 }
 
+/// The gate's exported interfaces.
+///
+/// A gate component may export either or both interfaces, accessing an interface the component
+/// does not export panics.
+pub struct Exports {
+    name: String,
+    types: Option<types::Guest>,
+    ip_name_lookup: Option<ip_name_lookup::Guest>,
+}
+
+impl Exports {
+    /// The exported `wasi:sockets/types` interface.
+    pub fn wasi_sockets_types(&self) -> &types::Guest {
+        self.types
+            .as_ref()
+            .unwrap_or_else(|| panic!("{} does not export wasi:sockets/types", self.name))
+    }
+
+    /// The exported `wasi:sockets/ip-name-lookup` interface.
+    pub fn wasi_sockets_ip_name_lookup(&self) -> &ip_name_lookup::Guest {
+        self.ip_name_lookup
+            .as_ref()
+            .unwrap_or_else(|| panic!("{} does not export wasi:sockets/ip-name-lookup", self.name))
+    }
+}
+
 /// An instantiated gate.
 pub struct Gate {
     store: Store<Ctx>,
-    instance: bindings::Gate,
+    exports: Exports,
     recorder: Recorder,
 }
 
@@ -506,11 +546,11 @@ impl Gate {
     /// Run a test body against the gate's exports.
     pub async fn run<R: Send + 'static>(
         &mut self,
-        f: impl AsyncFnOnce(&Accessor<Ctx>, &bindings::Gate) -> Result<R> + Send,
+        f: impl AsyncFnOnce(&Accessor<Ctx>, &Exports) -> Result<R> + Send,
     ) -> Result<R> {
-        let instance = &self.instance;
+        let exports = &self.exports;
         self.store
-            .run_concurrent(async move |accessor| f(accessor, instance).await)
+            .run_concurrent(async move |accessor| f(accessor, exports).await)
             .await?
     }
 }

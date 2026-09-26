@@ -621,6 +621,9 @@ dependencies = [
 name = "gate-ip-name-lookup"
 version = "0.1.0"
 dependencies = [
+ "gate-tests",
+ "tokio",
+ "wasmtime",
  "wit-bindgen",
 ]
 
@@ -638,6 +641,9 @@ dependencies = [
 name = "gate-types"
 version = "0.1.0"
 dependencies = [
+ "gate-tests",
+ "tokio",
+ "wasmtime",
  "wit-bindgen",
 ]
 
