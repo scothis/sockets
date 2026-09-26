@@ -7,5 +7,9 @@ license = "Apache-2.0"
 [lib]
 crate-type = ["cdylib"]
 
+[package.metadata.componentized]
+# listen spawns a cooperative thread, which requires wasi-libc's coop threads support on wasm32-wasip3
+rust-target = "wasm32-wasip3"
+
 [dependencies]
 wit-bindgen = { workspace = true }

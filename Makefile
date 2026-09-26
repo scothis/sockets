@@ -3,8 +3,6 @@ SHELL := /bin/bash
 export RUST_BACKTRACE ?= 1
 export WASMTIME_BACKTRACE_DETAILS ?= 1
 
-# cargo components that build for wasm32-wasip3, all others build for wasm32-unknown-unknown
-WASIP3_COMPONENTS = gate-types
 CARGO_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/Cargo.toml)))))
 CONFIG_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/*.properties)))))
 WAC_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/*.wac)))))
@@ -24,12 +22,17 @@ clean:
 test:
 	cargo test --workspace
 
+# cargo components choose their target in Cargo.toml, defaulting to wasm32-unknown-unknown
+#
+#   [package.metadata.componentized]
+#   rust-target = "wasm32-wasip3"
+CARGO_COMPONENTS_TARGETS := $(if $(CARGO_COMPONENTS),$(shell cargo metadata --no-deps --format-version 1 | jq -r '.packages[] | "\(.name)=\(.metadata.componentized."rust-target" // "wasm32-unknown-unknown")"'))
 # cargo target for a component
-cargo_target = $(if $(filter $1,$(WASIP3_COMPONENTS)),wasm32-wasip3,wasm32-unknown-unknown)
+cargo_target = $(patsubst $1=%,%,$(filter $1=%,$(CARGO_COMPONENTS_TARGETS)))
 # order-only prerequisites for a component's cargo target
-cargo_target_deps = $(if $(filter $1,$(WASIP3_COMPONENTS)),| $(WASI_SYSROOT))
-# wasm32-wasip3 emits a component directly, wasm32-unknown-unknown emits a core module
-cargo_component = $(if $(filter $1,$(WASIP3_COMPONENTS)),cp $2 $3,wasm-tools component new $2 -o $3)
+cargo_target_deps = $(if $(filter wasm32-wasip3,$(call cargo_target,$1)),| $(WASI_SYSROOT))
+# wasm32-unknown-unknown emits a core module, other targets emit a component directly
+cargo_component = $(if $(filter wasm32-unknown-unknown,$(call cargo_target,$1)),wasm-tools component new $2 -o $3,cp $2 $3)
 
 # wasm32-wasip3 components link against wasi-libc with experimental cooperative threads support
 WASI_SDK_VERSION = 34
