@@ -657,11 +657,11 @@ impl GuestUdpSocket for GatedUdpSocket {
     fn create(address_family: IpAddressFamily) -> Result<UdpSocket, ErrorCode> {
         let call_summary = || {
             format!(
-                "OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY={address_family}"
+                "OPERATION=wasi:sockets/types#udp-socket.create ADDRESS-FAMILY={address_family}"
             )
         };
-        match authorize(&Operation::TcpSocket(TcpSocketOperation::Create(
-            componentized::sockets::latch::TcpSocketCreateArgs { address_family },
+        match authorize(&Operation::UdpSocket(UdpSocketOperation::Create(
+            componentized::sockets::latch::UdpSocketCreateArgs { address_family },
         ))) {
             Ok(Denied(error_code)) => {
                 warn!("Denied REASON={error_code} {}", call_summary());
@@ -934,7 +934,11 @@ impl GuestUdpSocket for GatedUdpSocket {
                     }
                     Ok(Abstained) => Ok((data, remote_address)),
                     Err(code) => {
-                        error!("Latch error CODE={code} {}", call_summary());
+                        error!(
+                            "Latch error CODE={code} {summary}",
+                            code = DisplayLatchError(&code),
+                            summary = call_summary()
+                        );
                         Err(code)?
                     }
                 }
