@@ -6,9 +6,11 @@
 //! front of the host latch, they are composed into the gate before it is
 //! instantiated.
 
+use std::collections::HashSet;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::path::{Path, PathBuf};
 use std::pin::Pin;
+use std::process::Command;
 use std::sync::{Arc, Mutex};
 use std::task::Poll;
 
@@ -133,9 +135,49 @@ impl<D, T: Lift + Send + Sync + 'static> StreamConsumer<D> for ChannelConsumer<T
     }
 }
 
+/// Root of the workspace, where the Makefile lives.
+fn workspace_dir() -> PathBuf {
+    Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
+}
+
 /// Directory containing the built components.
 pub fn lib_dir() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../../lib")
+    workspace_dir().join("lib")
+}
+
+/// Rebuild the named components in `lib/` with make, unless they were already built by this
+/// process.
+fn ensure_built(names: &[&str]) -> Result<()> {
+    static BUILT: Mutex<Option<HashSet<String>>> = Mutex::new(None);
+
+    // hold the lock while building so concurrent tests don't run make over each other
+    let mut built = BUILT.lock().unwrap_or_else(|err| err.into_inner());
+    let built = built.get_or_insert_with(HashSet::new);
+    let targets: Vec<String> = names
+        .iter()
+        .filter(|name| !built.contains(**name))
+        .map(|name| format!("lib/{name}.wasm"))
+        .collect();
+    if targets.is_empty() {
+        return Ok(());
+    }
+
+    let output = Command::new("make")
+        .arg("-C")
+        .arg(workspace_dir())
+        .args(&targets)
+        .output()
+        .context("failed to run make")?;
+    if !output.status.success() {
+        bail!(
+            "failed to build {}:\n{}{}",
+            targets.join(" "),
+            String::from_utf8_lossy(&output.stdout),
+            String::from_utf8_lossy(&output.stderr)
+        );
+    }
+    built.extend(names.iter().map(|name| name.to_string()));
+    Ok(())
 }
 
 /// An operation the host latch was asked to authorize.
@@ -405,6 +447,10 @@ impl Harness {
     }
 
     fn compose(&self) -> Result<Vec<u8>> {
+        let mut names = vec![self.gate.as_str()];
+        names.extend(self.latches.iter().map(String::as_str));
+        ensure_built(&names)?;
+
         let read = |name: &str| {
             let path = lib_dir().join(format!("{name}.wasm"));
             std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))

@@ -21,7 +21,7 @@ clean:
 	rm -rf lib/*.wasm.md
 
 .PHONY: test
-test: components
+test:
 	cargo test --workspace
 
 # cargo target for a component
