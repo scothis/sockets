@@ -8,4 +8,4 @@ members = [
 [workspace.dependencies]
 heck = "0.5"
 latch-n = { path = "./crates/latch-n" }
-wit-bindgen = { version = "0.58.0", features = ["async-spawn"], git = "https://github.com/bytecodealliance/wit-bindgen.git", branch = "main" }
+wit-bindgen = { version = "0.62.0", features = ["async-spawn"], git = "https://github.com/bytecodealliance/wit-bindgen.git", branch = "main" }

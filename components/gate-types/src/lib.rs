@@ -2,6 +2,8 @@
 
 use std::fmt::Display;
 
+use wit_bindgen::StreamReader;
+
 use crate::componentized::sockets::latch::{
     authorize,
     Decision::{Abstained, Denied},
@@ -275,10 +277,53 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=listen&sektion=2>"]
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=accept&sektion=2>"]
     #[allow(async_fn_in_trait)]
-    fn listen(&self) -> Result<wit_bindgen::rt::async_support::StreamReader<TcpSocket>, ErrorCode> {
-        // spawning async calls from a sync context is not yet supported by the component model
-        warn!("Denied REASON=cooperative-multithreading-required OPERATION=wasi:sockets/types#tcp-socket.listen");
-        Err(types::ErrorCode::NotSupported)
+    fn listen(&self) -> Result<StreamReader<TcpSocket>, ErrorCode> {
+        let call_summary = || "OPERATION=wasi:sockets/types#tcp-socket.listen".to_string();
+        match authorize(&Operation::TcpSocket(TcpSocketOperation::Listen((
+            &self.socket,
+        )))) {
+            Ok(Denied(reason)) => {
+                warn!("Denied REASON={reason} {}", call_summary());
+                Err(reason)?
+            }
+            Ok(Abstained) => {
+                let mut connections = self.socket.listen()?;
+                let (mut tx, rx) = wit_stream::new::<TcpSocket>();
+                // listen is a sync export, so forward connections from a cooperative thread
+                std::thread::spawn(move || {
+                    wit_bindgen::block_on(async {
+                        while let Some(socket) = connections.next().await {
+                            let call_summary = || {
+                                "OPERATION=wasi:sockets/types#tcp-socket.listen.connection"
+                                    .to_string()
+                            };
+                            match authorize(&Operation::TcpSocket(
+                                TcpSocketOperation::ListenConnection((&socket,)),
+                            )) {
+                                Ok(Denied(reason)) => {
+                                    warn!("Denied REASON={reason} {}", call_summary());
+                                }
+                                Ok(Abstained) => {
+                                    let socket = TcpSocket::new(GatedTcpSocket::new(socket));
+                                    if tx.write_one(socket).await.is_some() {
+                                        // reader dropped, stop accepting connections
+                                        break;
+                                    }
+                                }
+                                Err(code) => {
+                                    error!("Latch error CODE={code} {}", call_summary());
+                                }
+                            }
+                        }
+                    })
+                });
+                Ok(rx)
+            }
+            Err(code) => {
+                error!("Latch error CODE={code} {}", call_summary());
+                Err(code)?
+            }
+        }
     }
 
     #[doc = "/ Transmit data to peer."]

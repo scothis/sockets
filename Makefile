@@ -3,6 +3,8 @@ SHELL := /bin/bash
 export RUST_BACKTRACE ?= 1
 export WASMTIME_BACKTRACE_DETAILS ?= 1
 
+# cargo components that build for wasm32-wasip3, all others build for wasm32-unknown-unknown
+WASIP3_COMPONENTS = gate-types
 CARGO_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/Cargo.toml)))))
 CONFIG_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/*.properties)))))
 WAC_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/*.wac)))))
@@ -22,6 +24,23 @@ clean:
 test:
 	@echo "TODO add tests"
 
+# cargo target for a component
+cargo_target = $(if $(filter $1,$(WASIP3_COMPONENTS)),wasm32-wasip3,wasm32-unknown-unknown)
+# order-only prerequisites for a component's cargo target
+cargo_target_deps = $(if $(filter $1,$(WASIP3_COMPONENTS)),| $(WASI_SYSROOT))
+# wasm32-wasip3 emits a component directly, wasm32-unknown-unknown emits a core module
+cargo_component = $(if $(filter $1,$(WASIP3_COMPONENTS)),cp $2 $3,wasm-tools component new $2 -o $3)
+
+# wasm32-wasip3 components link against wasi-libc with experimental cooperative threads support
+WASI_SDK_VERSION = 34
+WASI_SYSROOT = target/wasi-sysroot-$(WASI_SDK_VERSION).0
+WASI_COOP_THREADS_LIB = $(CURDIR)/$(WASI_SYSROOT)/experimental-coop-threads/lib/wasm32-wasip3
+export CARGO_TARGET_WASM32_WASIP3_RUSTFLAGS ?= -C link-self-contained=no -L native=$(WASI_COOP_THREADS_LIB) -C link-arg=$(WASI_COOP_THREADS_LIB)/crt1-reactor.o
+
+$(WASI_SYSROOT):
+	mkdir -p $(dir $(WASI_SYSROOT))
+	curl -sSfL https://github.com/WebAssembly/wasi-sdk/releases/download/wasi-sdk-$(WASI_SDK_VERSION)/wasi-sysroot-$(WASI_SDK_VERSION).0.tar.gz | tar -xz -C $(dir $(WASI_SYSROOT))
+
 .PHONY: components
 components: lib/interface.wasm $(foreach component,$(COMPONENTS),lib/$(component).wasm) $(foreach component,$(COMPONENTS),lib/$(component).debug.wasm)
 
@@ -30,19 +49,19 @@ define BUILD_COMPONENT
 .PHONY: components/$1
 components/$1: lib/$1.wasm lib/$1.debug.wasm
 
-ifneq ($(wildcard components/$1/Cargo.toml),)
+ifneq ($(filter $1,$(CARGO_COMPONENTS)),)
 
-lib/$1.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f)
-	cargo build -p $1 --target wasm32-unknown-unknown --release
-	wasm-tools component new target/wasm32-unknown-unknown/release/$(subst -,_,$1).wasm -o lib/$1.wasm
+lib/$1.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f) $(call cargo_target_deps,$1)
+	cargo build -p $1 --target $(call cargo_target,$1) --release
+	$(call cargo_component,$1,target/$(call cargo_target,$1)/release/$(subst -,_,$1).wasm,lib/$1.wasm)
 	cp components/$1/README.md lib/$1.wasm.md
 
-lib/$1.debug.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f)
-	cargo build --target wasm32-unknown-unknown -p $1
-	wasm-tools component new target/wasm32-unknown-unknown/debug/$(subst -,_,$1).wasm -o lib/$1.debug.wasm
+lib/$1.debug.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f) $(call cargo_target_deps,$1)
+	cargo build --target $(call cargo_target,$1) -p $1
+	$(call cargo_component,$1,target/$(call cargo_target,$1)/debug/$(subst -,_,$1).wasm,lib/$1.debug.wasm)
 	cp components/$1/README.md lib/$1.debug.wasm.md
 
-else ifneq ($(wildcard components/$1/$1.properties),)
+else ifneq ($(filter $1,$(CONFIG_COMPONENTS)),)
 
 lib/$1.wasm: components/$1/$1.properties components/$1/README.md
 	static-config -f components/$1/$1.properties -o lib/$1.wasm
@@ -52,7 +71,7 @@ lib/$1.debug.wasm: components/$1/$1.properties components/$1/README.md
 	static-config -f components/$1/$1.properties -o lib/$1.debug.wasm
 	cp components/$1/README.md lib/$1.debug.wasm.md
 
-else ifneq ($(wildcard components/$1/$1.wac),)
+else ifneq ($(filter $1,$(WAC_COMPONENTS)),)
 
 WAC_DEPS_$1 := $(shell wac parse components/$1/$1.wac 2> /dev/null | jq -r '[.. | .package?.name? | strings | select(startswith("local:")) | sub("^local:"; "")] | unique[]')
 
@@ -64,7 +83,7 @@ lib/$1.debug.wasm: components/$1/$1.wac components/$1/README.md $$(foreach compo
 	wac compose $$(foreach component,$$(WAC_DEPS_$1),-d local:$$(component)=lib/$$(component).debug.wasm) -o lib/$1.debug.wasm components/$1/$1.wac
 	cp components/$1/README.md lib/$1.debug.wasm.md
 
-else ifneq ($(wildcard components/$1/$1.wkg),)
+else ifneq ifneq ($(filter $1,$(WKG_COMPONENTS)),)
 
 lib/$1.wasm: components/$1/$1.wkg components/$1/README.md
 	wkg oci pull $(shell cat components/$1/$1.wkg 2> /dev/null | head -1) -o lib/$1.wasm
