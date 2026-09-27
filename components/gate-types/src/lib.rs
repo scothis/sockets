@@ -1,19 +1,22 @@
-#![cfg_attr(not(test), no_main)]
-
+use core::{fmt, net};
 use wit_bindgen::StreamReader;
 
-use crate::componentized::sockets::latch::{
-    authorize,
-    Decision::{Abstained, Denied},
-    ErrorCode as LatchErrorCode, Operation, SocketsErrorCode, TcpSocketOperation,
-    UdpSocketOperation,
+use crate::{
+    componentized::sockets::latch::{
+        authorize,
+        Decision::{Abstained, Denied},
+        ErrorCode as LatchErrorCode, Operation, SocketsErrorCode, TcpSocketOperation,
+        UdpSocketOperation,
+    },
+    exports::wasi::sockets::types::{
+        Duration, ErrorCode, Guest, GuestTcpSocket, GuestUdpSocket, IpAddressFamily,
+        IpSocketAddress, TcpSocket, UdpSocket,
+    },
+    wasi::{
+        logging::logging::{log, Level},
+        sockets::types,
+    },
 };
-use crate::exports::wasi::sockets::types::{
-    Duration, ErrorCode, Guest, GuestTcpSocket, GuestUdpSocket, IpAddressFamily, IpSocketAddress,
-    TcpSocket, UdpSocket,
-};
-use crate::wasi::logging::logging::{log, Level};
-use crate::wasi::sockets::types;
 
 macro_rules! error {
     ($dst:expr, $($arg:tt)*) => {
@@ -301,37 +304,34 @@ impl GuestTcpSocket for GatedTcpSocket {
             Ok(Abstained) => {
                 let mut connections = self.socket.listen()?;
                 let (mut tx, rx) = wit_stream::new::<TcpSocket>();
-                // listen is a sync export, so forward connections from a cooperative thread
-                std::thread::spawn(move || {
-                    wit_bindgen::block_on(async {
-                        while let Some(socket) = connections.next().await {
-                            let call_summary = || {
-                                "OPERATION=wasi:sockets/types#tcp-socket.listen.connection"
-                                    .to_string()
-                            };
-                            match authorize(&Operation::TcpSocket(
-                                TcpSocketOperation::ListenConnection((&socket,)),
-                            )) {
-                                Ok(Denied(reason)) => {
-                                    warn!("Denied REASON={reason} {}", call_summary());
-                                }
-                                Ok(Abstained) => {
-                                    let socket = TcpSocket::new(GatedTcpSocket::new(socket));
-                                    if tx.write_one(socket).await.is_some() {
-                                        // reader dropped, stop accepting connections
-                                        break;
-                                    }
-                                }
-                                Err(code) => {
-                                    error!(
-                                        "Latch error CODE={code} {summary}",
-                                        code = DisplayLatchError(&code),
-                                        summary = call_summary()
-                                    );
+                // listen is a sync export, so forward connections from the background executor
+                componentized_rt::executor::spawn(async move {
+                    while let Some(socket) = connections.next().await {
+                        let call_summary = || {
+                            "OPERATION=wasi:sockets/types#tcp-socket.listen.connection".to_string()
+                        };
+                        match authorize(&Operation::TcpSocket(
+                            TcpSocketOperation::ListenConnection((&socket,)),
+                        )) {
+                            Ok(Denied(reason)) => {
+                                warn!("Denied REASON={reason} {}", call_summary());
+                            }
+                            Ok(Abstained) => {
+                                let socket = TcpSocket::new(GatedTcpSocket::new(socket));
+                                if tx.write_one(socket).await.is_some() {
+                                    // reader dropped, stop accepting connections
+                                    break;
                                 }
                             }
+                            Err(code) => {
+                                error!(
+                                    "Latch error CODE={code} {summary}",
+                                    code = DisplayLatchError(&code),
+                                    summary = call_summary()
+                                );
+                            }
                         }
-                    })
+                    }
                 });
                 Ok(rx)
             }
@@ -1065,8 +1065,8 @@ impl From<LatchErrorCode> for ErrorCode {
     }
 }
 
-impl std::fmt::Display for SocketsErrorCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for SocketsErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::AccessDenied => f.write_str("access-denied"),
             Self::InvalidArgument => f.write_str("invalid-argument"),
@@ -1077,8 +1077,8 @@ impl std::fmt::Display for SocketsErrorCode {
 }
 
 struct DisplayLatchError<'a>(&'a LatchErrorCode);
-impl std::fmt::Display for DisplayLatchError<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for DisplayLatchError<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self(LatchErrorCode::Other(Some(message))) => f.write_str(message),
             Self(LatchErrorCode::Other(None)) => f.write_str("other"),
@@ -1086,8 +1086,8 @@ impl std::fmt::Display for DisplayLatchError<'_> {
     }
 }
 
-impl std::fmt::Display for types::IpAddressFamily {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for types::IpAddressFamily {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!(
             "{}",
             match self {
@@ -1098,23 +1098,21 @@ impl std::fmt::Display for types::IpAddressFamily {
     }
 }
 
-impl std::fmt::Display for types::IpSocketAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for types::IpSocketAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         f.write_fmt(format_args!(
             "{}",
             match self {
-                types::IpSocketAddress::Ipv4(ipv4) =>
-                    std::net::SocketAddr::V4(std::net::SocketAddrV4::new(
-                        std::net::Ipv4Addr::from_octets(ipv4.address.into()),
-                        ipv4.port
-                    )),
-                types::IpSocketAddress::Ipv6(ipv6) =>
-                    std::net::SocketAddr::V6(std::net::SocketAddrV6::new(
-                        std::net::Ipv6Addr::from_segments(ipv6.address.into()),
-                        ipv6.port,
-                        ipv6.flow_info,
-                        ipv6.scope_id
-                    )),
+                types::IpSocketAddress::Ipv4(ipv4) => net::SocketAddr::V4(net::SocketAddrV4::new(
+                    net::Ipv4Addr::from_octets(ipv4.address.into()),
+                    ipv4.port
+                )),
+                types::IpSocketAddress::Ipv6(ipv6) => net::SocketAddr::V6(net::SocketAddrV6::new(
+                    net::Ipv6Addr::from_segments(ipv6.address.into()),
+                    ipv6.port,
+                    ipv6.flow_info,
+                    ipv6.scope_id
+                )),
             }
         ))
     }
@@ -1123,8 +1121,8 @@ impl std::fmt::Display for types::IpSocketAddress {
 struct DisplayOption<T>(Option<T>);
 
 // Implement Display for your local wrapper
-impl<T: std::fmt::Display> std::fmt::Display for DisplayOption<T> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl<T: fmt::Display> fmt::Display for DisplayOption<T> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match &self.0 {
             Some(value) => write!(f, "some<{}>", value),
             None => write!(f, "none"), // Customize what to print if empty

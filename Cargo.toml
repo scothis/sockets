@@ -6,6 +6,7 @@ members = [
 ]
 
 [workspace.dependencies]
+componentized-rt = { path = "./crates/componentized-rt" }
 gate-tests = { path = "./crates/gate-tests" }
 heck = "0.5"
 latch-n = { path = "./crates/latch-n" }
@@ -13,4 +14,4 @@ tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-uti
 wac-graph = "0.11"
 wasmtime = { version = "49", features = ["component-model-async"] }
 wasmtime-wasi = { version = "49", features = ["p3"] }
-wit-bindgen = { version = "0.62.0", features = ["async-spawn"], git = "https://github.com/bytecodealliance/wit-bindgen.git", branch = "main" }
+wit-bindgen = { version = "0.62.0", features = ["async-spawn"] }

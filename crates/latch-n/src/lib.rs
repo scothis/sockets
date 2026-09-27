@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_main)]
-
 use crate::bindings::exports::componentized::sockets::latch::{Decision, ErrorCode, Operation};
 
 pub fn authorize(

@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_main)]
-
 use crate::exports::componentized::sockets::latch::{
     Decision, ErrorCode, Guest as Latch, Operation, SocketsErrorCode,
 };

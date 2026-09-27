@@ -1,8 +1,8 @@
-#![cfg_attr(not(test), no_main)]
-
-use std::collections::HashSet;
-use std::hash::{Hash, Hasher};
-use std::sync::{Mutex, OnceLock};
+use std::{
+    cell::RefCell,
+    collections::BTreeSet,
+    net::{IpAddr, Ipv4Addr, Ipv6Addr},
+};
 
 use crate::componentized::sockets::latch;
 use crate::exports::componentized::sockets::latch::{
@@ -10,8 +10,11 @@ use crate::exports::componentized::sockets::latch::{
 };
 
 struct State {
-    granted_addresses: Mutex<HashSet<IpAddress>>,
+    granted_addresses: RefCell<BTreeSet<IpAddr>>,
 }
+
+// components are single threaded
+unsafe impl Sync for State {}
 
 impl State {
     fn is_granted_socket_address(socket_address: IpSocketAddress) -> bool {
@@ -23,29 +26,32 @@ impl State {
                 IpAddress::Ipv6(ipv6_socket_address.address)
             }
         };
-        Self::get()
+        STATE
             .granted_addresses
-            .lock()
-            .unwrap()
-            .contains(&ip_address)
+            .borrow()
+            .contains(&ip_addr(ip_address))
     }
 
     fn grant_ip_address(ip_address: IpAddress) {
-        Self::get()
+        STATE
             .granted_addresses
-            .lock()
-            .unwrap()
-            .insert(ip_address);
-    }
-
-    fn get() -> &'static Self {
-        STATE.get_or_init(|| Self {
-            granted_addresses: Mutex::new(HashSet::new()),
-        })
+            .borrow_mut()
+            .insert(ip_addr(ip_address));
     }
 }
 
-static STATE: OnceLock<State> = OnceLock::new();
+static STATE: State = State {
+    granted_addresses: RefCell::new(BTreeSet::new()),
+};
+
+fn ip_addr(ip_address: IpAddress) -> IpAddr {
+    match ip_address {
+        IpAddress::Ipv4((a, b, c, d)) => IpAddr::V4(Ipv4Addr::new(a, b, c, d)),
+        IpAddress::Ipv6((a, b, c, d, e, f, g, h)) => {
+            IpAddr::V6(Ipv6Addr::new(a, b, c, d, e, f, g, h))
+        }
+    }
+}
 
 struct ConnectToLookedUpAddressLatch {}
 
@@ -111,33 +117,6 @@ impl Latch for ConnectToLookedUpAddressLatch {
         }
 
         decision
-    }
-}
-
-impl PartialEq for IpAddress {
-    fn eq(&self, other: &Self) -> bool {
-        match (self, other) {
-            (Self::Ipv4(l0), Self::Ipv4(r0)) => l0 == r0,
-            (Self::Ipv6(l0), Self::Ipv6(r0)) => l0 == r0,
-            _ => false,
-        }
-    }
-}
-
-impl Eq for IpAddress {}
-
-impl Hash for IpAddress {
-    fn hash<H: Hasher>(&self, state: &mut H) {
-        match self {
-            IpAddress::Ipv4(ipv4) => {
-                4.hash(state);
-                ipv4.hash(state);
-            }
-            IpAddress::Ipv6(ipv6) => {
-                6.hash(state);
-                ipv6.hash(state);
-            }
-        }
     }
 }
 

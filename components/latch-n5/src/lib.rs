@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_main)]
-
 use latch_n::bindings::componentized::sockets::latch as latch0;
 use latch_n::bindings::exports::componentized::sockets::latch::{
     Decision, ErrorCode, Guest as Latch, Operation,

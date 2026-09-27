@@ -1,5 +1,3 @@
-#![cfg_attr(not(test), no_main)]
-
 use heck::ToKebabCase;
 
 use crate::exports::componentized::sockets::latch::{

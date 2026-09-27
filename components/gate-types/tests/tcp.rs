@@ -273,3 +273,65 @@ async fn listen_connection_denied() -> wasmtime::Result<()> {
     );
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn listen_forwards_connections_from_multiple_listeners() -> wasmtime::Result<()> {
+    let peer = TcpListener::bind("127.0.0.1:0").await?;
+    let peer_address = ip_socket_address(peer.local_addr()?);
+
+    let mut gate = Harness::new("gate-types").build().await?;
+    gate.run(async |accessor, gate| {
+        let tcp = gate.wasi_sockets_types().tcp_socket();
+
+        // the first listen starts the background executor
+        let first = tcp
+            .call_create(accessor, IpAddressFamily::Ipv4)
+            .await?
+            .expect("create");
+        tcp.call_bind(accessor, first, loopback(0)).await?.expect("bind");
+        let first_connections = tcp.call_listen(accessor, first).await?.expect("listen");
+        let first_address = tcp
+            .call_get_local_address(accessor, first)
+            .await?
+            .expect("local address");
+        let mut first_connections = collect(accessor, first_connections)?;
+        let _client = TcpStream::connect(socket_addr(first_address)).await?;
+        let accepted = timeout(Duration::from_secs(5), first_connections.recv()).await?;
+        assert!(accepted.is_some(), "first listener should forward");
+
+        // an async export runs while the executor is parked
+        let outbound = tcp
+            .call_create(accessor, IpAddressFamily::Ipv4)
+            .await?
+            .expect("create");
+        tcp.call_connect(accessor, outbound, peer_address)
+            .await?
+            .expect("connect");
+        timeout(Duration::from_secs(5), peer.accept()).await??;
+
+        // the second listen, from another task, wakes the parked executor
+        let second = tcp
+            .call_create(accessor, IpAddressFamily::Ipv4)
+            .await?
+            .expect("create");
+        tcp.call_bind(accessor, second, loopback(0)).await?.expect("bind");
+        let second_connections = tcp.call_listen(accessor, second).await?.expect("listen");
+        let second_address = tcp
+            .call_get_local_address(accessor, second)
+            .await?
+            .expect("local address");
+        let mut second_connections = collect(accessor, second_connections)?;
+        let _client = TcpStream::connect(socket_addr(second_address)).await?;
+        let accepted = timeout(Duration::from_secs(5), second_connections.recv()).await?;
+        assert!(accepted.is_some(), "second listener should forward");
+
+        // the first listener keeps forwarding
+        let _client = TcpStream::connect(socket_addr(first_address)).await?;
+        let accepted = timeout(Duration::from_secs(5), first_connections.recv()).await?;
+        assert!(accepted.is_some(), "first listener should keep forwarding");
+        Ok(())
+    })
+    .await?;
+    assert_eq!(gate.recorder().logs(), vec![]);
+    Ok(())
+}

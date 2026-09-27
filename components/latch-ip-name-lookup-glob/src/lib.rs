@@ -12,7 +12,7 @@ struct GlobIpNameLookupLatch {}
 struct Patterns {
     initialized: bool,
     denies: Option<Vec<Box<dyn PathMatcher>>>,
-    grants: Option<Vec<Box<dyn PathMatcher>>>,
+    abstains: Option<Vec<Box<dyn PathMatcher>>>,
     deny_reason: Option<SocketsErrorCode>,
     default: Decision,
 }
@@ -24,7 +24,7 @@ impl Patterns {
         }
 
         let mut denies: Vec<Box<dyn PathMatcher>> = vec![];
-        let mut grants: Vec<Box<dyn PathMatcher>> = vec![];
+        let mut abstains: Vec<Box<dyn PathMatcher>> = vec![];
         let mut reason = SocketsErrorCode::AccessDenied;
         let mut default = Decision::Abstained;
 
@@ -34,9 +34,9 @@ impl Patterns {
                 denies.push(Box::new(
                     glob(&value).expect("config value must parse as a glob"),
                 ));
-            } else if key.starts_with("grant") {
+            } else if key.starts_with("abstain") {
                 let value = value.replace(".", "/").to_lowercase();
-                grants.push(Box::new(
+                abstains.push(Box::new(
                     glob(&value).expect("config value must parse as a glob"),
                 ));
             } else if key == "reason" {
@@ -55,7 +55,7 @@ impl Patterns {
 
         unsafe {
             STATE.denies = Some(denies);
-            STATE.grants = Some(grants);
+            STATE.abstains = Some(abstains);
             STATE.deny_reason = Some(reason);
             STATE.default = default;
             STATE.initialized = true;
@@ -64,30 +64,32 @@ impl Patterns {
 
     #[allow(static_mut_refs)]
     fn authorize(name: String) -> Result<Decision, ErrorCode> {
-        let decision = unsafe { STATE.authorize_name(name) };
-        if matches!(decision, Ok(Decision::Denied(_))) {
-            return decision;
-        }
-        unsafe { Ok(STATE.default.clone()) }
+        let decision = unsafe { STATE.authorize_name(name).unwrap_or(STATE.default.clone()) };
+        Ok(decision)
     }
 
-    fn authorize_name(&self, name: String) -> Result<Decision, ErrorCode> {
+    fn authorize_name(&self, name: String) -> Option<Decision> {
         let name = name.replace(".", "/").to_lowercase();
         let name = Path::new(&name);
 
         for deny in self.denies.as_ref().unwrap() {
             if deny.matches(name) {
-                return Ok(Decision::Denied(self.deny_reason.clone().unwrap()));
+                return Some(Decision::Denied(self.deny_reason.clone().unwrap()));
             }
         }
-        Ok(Decision::Abstained)
+        for abstain in self.abstains.as_ref().unwrap() {
+            if abstain.matches(name) {
+                return Some(Decision::Abstained);
+            }
+        }
+        None
     }
 }
 
 static mut STATE: Patterns = Patterns {
     initialized: false,
     denies: None,
-    grants: None,
+    abstains: None,
     deny_reason: None,
     default: Decision::Abstained,
 };

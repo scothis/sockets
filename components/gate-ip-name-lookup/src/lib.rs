@@ -1,4 +1,4 @@
-#![cfg_attr(not(test), no_main)]
+use core::{fmt, net};
 
 use crate::{
     componentized::sockets::latch::{
@@ -111,8 +111,8 @@ impl Guest for GatedIpNameLookup {
     }
 }
 
-impl std::fmt::Display for SocketsErrorCode {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for SocketsErrorCode {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::AccessDenied => f.write_str("access-denied"),
             Self::InvalidArgument => f.write_str("invalid-argument"),
@@ -123,8 +123,8 @@ impl std::fmt::Display for SocketsErrorCode {
 }
 
 struct DisplayLatchError<'a>(&'a LatchErrorCode);
-impl std::fmt::Display for DisplayLatchError<'_> {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+impl fmt::Display for DisplayLatchError<'_> {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self(LatchErrorCode::Other(Some(message))) => f.write_str(message),
             Self(LatchErrorCode::Other(None)) => f.write_str("other"),
@@ -132,18 +132,18 @@ impl std::fmt::Display for DisplayLatchError<'_> {
     }
 }
 
-impl std::fmt::Display for types::IpAddress {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        let address: std::net::IpAddr = (*self).into();
+impl fmt::Display for types::IpAddress {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let address: net::IpAddr = (*self).into();
         f.write_fmt(format_args!("{address}"))
     }
 }
 
-impl Into<std::net::IpAddr> for types::IpAddress {
-    fn into(self) -> std::net::IpAddr {
+impl Into<net::IpAddr> for types::IpAddress {
+    fn into(self) -> net::IpAddr {
         match self {
-            Self::Ipv4(v4) => std::net::IpAddr::V4(std::net::Ipv4Addr::new(v4.0, v4.1, v4.2, v4.3)),
-            Self::Ipv6(v6) => std::net::IpAddr::V6(std::net::Ipv6Addr::new(
+            Self::Ipv4(v4) => net::IpAddr::V4(net::Ipv4Addr::new(v4.0, v4.1, v4.2, v4.3)),
+            Self::Ipv6(v6) => net::IpAddr::V6(net::Ipv6Addr::new(
                 v6.0, v6.1, v6.2, v6.3, v6.4, v6.5, v6.6, v6.7,
             )),
         }
