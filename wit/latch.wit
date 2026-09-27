@@ -79,7 +79,10 @@ interface latch {
         denied(sockets-error-code),
     }
 
+    type latch-name = string;
+
     variant error-code {
+        invalid-config(latch-name),
         other(option<string>),
     }
 

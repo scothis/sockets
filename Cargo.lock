@@ -983,7 +983,10 @@ dependencies = [
 name = "latch-ip-name-lookup-glob"
 version = "0.1.0"
 dependencies = [
- "path-matchers",
+ "glob",
+ "test-harness",
+ "tokio",
+ "wasmtime",
  "wit-bindgen",
 ]
 
@@ -1155,15 +1158,6 @@ name = "once_cell"
 version = "1.21.4"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "9f7c3e4beb33f85d45ae3e3a1792185706c8e16d043238c593331cc7cd313b50"
-
-[[package]]
-name = "path-matchers"
-version = "1.0.2"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "36cd9b72a47679ec193a5f0229d9ab686b7bd45e1fbc59ccf953c9f3d83f7b2b"
-dependencies = [
- "glob",
-]
 
 [[package]]
 name = "percent-encoding"

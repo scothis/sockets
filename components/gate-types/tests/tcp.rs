@@ -71,6 +71,31 @@ async fn create_latch_error() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
+async fn create_latch_invalid_config() -> wasmtime::Result<()> {
+    let mut gate = Harness::new("gate-types")
+        .host_latch(HostLatch::invalid_config("my-latch"))
+        .build()
+        .await?;
+    let result = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            Ok(tcp.call_create(accessor, IpAddressFamily::Ipv4).await?)
+        })
+        .await?;
+    assert!(
+        matches!(result, Err(ErrorCode::Other(Some(ref message))) if message == "latch-error: invalid-config<my-latch>")
+    );
+    assert_eq!(
+        gate.recorder().logs(),
+        vec![LogEntry::error(
+            "componentized-gate",
+            "Latch error CODE=invalid-config<my-latch> OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY=IPv4"
+        )]
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
 async fn bind_denied_by_latch_component() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
         .latch("latch-deny-bind")

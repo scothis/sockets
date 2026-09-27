@@ -1,3 +1,4 @@
+use test_harness::bindings::exports::wasi::sockets::ip_name_lookup::ErrorCode;
 use test_harness::{Harness, HostLatch, LogEntry};
 
 #[tokio::test(flavor = "multi_thread")]
@@ -46,6 +47,33 @@ async fn resolve_addresses_denied() -> wasmtime::Result<()> {
         vec![LogEntry::warn(
             "componentized-gate",
             "Denied REASON=access-denied OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME=localhost"
+        )]
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resolve_addresses_latch_invalid_config() -> wasmtime::Result<()> {
+    let mut gate = Harness::new("gate-ip-name-lookup")
+        .host_latch(HostLatch::invalid_config("my-latch"))
+        .build()
+        .await?;
+    let result = gate
+        .run(async |accessor, gate| {
+            let lookup = gate.wasi_sockets_ip_name_lookup();
+            Ok(lookup
+                .call_resolve_addresses(accessor, "localhost".to_string())
+                .await?)
+        })
+        .await?;
+    assert!(
+        matches!(result, Err(ErrorCode::Other(Some(ref message))) if message == "latch-error: invalid-config<my-latch>")
+    );
+    assert_eq!(
+        gate.recorder().logs(),
+        vec![LogEntry::error(
+            "componentized-gate",
+            "Latch error CODE=invalid-config<my-latch> OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME=localhost"
         )]
     );
     Ok(())

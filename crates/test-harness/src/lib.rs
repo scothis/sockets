@@ -4,7 +4,8 @@
 //! upstream sockets from wasmtime-wasi, a scripted [`HostLatch`], and captured
 //! `wasi:logging` output. Latch components from `lib/` can be installed in
 //! front of the host latch, they are composed into the component before it is
-//! instantiated.
+//! instantiated. Values for `wasi:config/store` are shared by every component
+//! in the composition.
 
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -29,6 +30,7 @@ use crate::bindings::componentized::sockets::latch::{
     UdpSocketOperation,
 };
 use crate::bindings::exports::wasi::sockets::{ip_name_lookup, types};
+use crate::bindings::wasi::config::store;
 use crate::bindings::wasi::logging::logging;
 
 pub mod bindings {
@@ -39,6 +41,7 @@ pub mod bindings {
 
             world harness {
                 import componentized:sockets/latch@0.0.0-dev;
+                import wasi:config/store@0.2.0-rc.1;
                 import wasi:logging/logging@0.1.0-draft;
                 export wasi:sockets/types@0.3.0;
                 export wasi:sockets/ip-name-lookup@0.3.0;
@@ -202,19 +205,24 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
-    /// A trace logged by the test subject.
+    /// A trace message logged by the test subject.
     pub fn trace(context: impl Into<String>, message: impl Into<String>) -> Self {
         Self::log(Level::Trace, context, message)
     }
 
-    /// A warning logged by the test subject.
+    /// A warning message logged by the test subject.
     pub fn warn(context: impl Into<String>, message: impl Into<String>) -> Self {
         Self::log(Level::Warn, context, message)
     }
 
-    /// An error logged by the test subject.
+    /// An error message logged by the test subject.
     pub fn error(context: impl Into<String>, message: impl Into<String>) -> Self {
         Self::log(Level::Error, context, message)
+    }
+
+    /// A critical message logged by the test subject.
+    pub fn critical(context: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::log(Level::Critical, context, message)
     }
 
     fn log(level: Level, context: impl Into<String>, message: impl Into<String>) -> Self {
@@ -260,6 +268,12 @@ impl HostLatch {
         Self::new(move |_| Err(LatchErrorCode::Other(Some(message.clone()))))
     }
 
+    /// Fail every authorization with an invalid config error from the named latch.
+    pub fn invalid_config(latch: &str) -> Self {
+        let latch = latch.to_string();
+        Self::new(move |_| Err(LatchErrorCode::InvalidConfig(latch.clone())))
+    }
+
     /// Decide each operation with a custom policy.
     pub fn new(
         policy: impl FnMut(&Authorization) -> Result<Decision, LatchErrorCode> + Send + 'static,
@@ -301,6 +315,7 @@ pub struct Ctx {
     wasi: WasiCtx,
     table: ResourceTable,
     latch: HostLatch,
+    config: Vec<(String, String)>,
     recorder: Recorder,
 }
 
@@ -322,6 +337,21 @@ impl latch::Host for Ctx {
             .unwrap()
             .push(authorization.clone());
         (self.latch.policy)(&authorization)
+    }
+}
+
+impl store::Host for Ctx {
+    fn get(&mut self, key: String) -> Result<Option<String>, store::Error> {
+        Ok(self
+            .config
+            .iter()
+            .rev()
+            .find(|(k, _)| *k == key)
+            .map(|(_, v)| v.clone()))
+    }
+
+    fn get_all(&mut self) -> Result<Vec<(String, String)>, store::Error> {
+        Ok(self.config.clone())
     }
 }
 
@@ -376,6 +406,7 @@ pub struct Harness {
     subject: String,
     latches: Vec<String>,
     host_latch: HostLatch,
+    config: Vec<(String, String)>,
 }
 
 impl Harness {
@@ -385,6 +416,7 @@ impl Harness {
             subject: component_name.to_string(),
             latches: vec![],
             host_latch: HostLatch::abstain(),
+            config: vec![],
         }
     }
 
@@ -404,6 +436,14 @@ impl Harness {
         self
     }
 
+    /// Add a `wasi:config/store` value, visible to every component in the composition.
+    ///
+    /// Values are returned by `get-all` in the order they are added.
+    pub fn config(mut self, key: &str, value: &str) -> Self {
+        self.config.push((key.to_string(), value.to_string()));
+        self
+    }
+
     /// Compose and instantiate the test subject.
     pub async fn build(self) -> Result<TestSubject> {
         let mut config = Config::new();
@@ -417,6 +457,7 @@ impl Harness {
         let mut linker = Linker::new(&engine);
         wasmtime_wasi::p3::add_to_linker(&mut linker)?;
         latch::add_to_linker::<_, HasSelf<Ctx>>(&mut linker, |ctx| ctx)?;
+        store::add_to_linker::<_, HasSelf<Ctx>>(&mut linker, |ctx| ctx)?;
         logging::add_to_linker::<_, HasSelf<Ctx>>(&mut linker, |ctx| ctx)?;
 
         let recorder = Recorder::default();
@@ -433,6 +474,7 @@ impl Harness {
                 wasi,
                 table: ResourceTable::new(),
                 latch: self.host_latch,
+                config: self.config,
                 recorder: recorder.clone(),
             },
         );

@@ -1063,6 +1063,9 @@ impl From<SocketsErrorCode> for ErrorCode {
 impl From<LatchErrorCode> for ErrorCode {
     fn from(value: LatchErrorCode) -> Self {
         match value {
+            LatchErrorCode::InvalidConfig(latch) => {
+                Self::Other(Some(format!("latch-error: invalid-config<{latch}>")))
+            }
             LatchErrorCode::Other(Some(message)) => {
                 Self::Other(Some(format!("latch-error: {message}")))
             }
@@ -1118,6 +1121,9 @@ struct DisplayLatchError<'a>(&'a LatchErrorCode);
 impl fmt::Display for DisplayLatchError<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
+            Self(LatchErrorCode::InvalidConfig(latch)) => {
+                write!(f, "invalid-config<{latch}>")
+            }
             Self(LatchErrorCode::Other(Some(message))) => f.write_str(message),
             Self(LatchErrorCode::Other(None)) => f.write_str("other"),
         }

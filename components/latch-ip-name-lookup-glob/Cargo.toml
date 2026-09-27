@@ -9,4 +9,9 @@ crate-type = ["cdylib"]
 
 [dependencies]
 wit-bindgen = { workspace = true }
-path-matchers = "1.0"
+glob = "0.3"
+
+[dev-dependencies]
+test-harness = { workspace = true }
+tokio = { workspace = true }
+wasmtime = { workspace = true }
