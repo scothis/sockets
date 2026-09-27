@@ -2,12 +2,6 @@ use core::{fmt, net};
 use wit_bindgen::StreamReader;
 
 use crate::{
-    componentized::sockets::latch::{
-        authorize,
-        Decision::{Abstained, Denied},
-        ErrorCode as LatchErrorCode, Operation, SocketsErrorCode, TcpSocketOperation,
-        UdpSocketOperation,
-    },
     exports::wasi::sockets::types::{
         Duration, ErrorCode, Guest, GuestTcpSocket, GuestUdpSocket, IpAddressFamily,
         IpSocketAddress, TcpSocket, UdpSocket,
@@ -18,42 +12,33 @@ use crate::{
     },
 };
 
-macro_rules! error {
+macro_rules! trace {
     ($dst:expr, $($arg:tt)*) => {
-        log(Level::Error, "componentized-gate", &format!($dst, $($arg)*));
+        log(Level::Trace, "componentized-trace", &format!($dst, $($arg)*));
     };
     ($dst:expr) => {
-        log(Level::Error, "componentized-gate", &format!($dst));
+        log(Level::Trace, "componentized-trace", &format!($dst));
     };
 }
 
-macro_rules! warn {
-    ($dst:expr, $($arg:tt)*) => {
-        log(Level::Warn, "componentized-gate", &format!($dst, $($arg)*));
-    };
-    ($dst:expr) => {
-        log(Level::Warn, "componentized-gate", &format!($dst));
-    };
+struct TracedSocketTypes {}
+
+impl Guest for TracedSocketTypes {
+    type TcpSocket = TracedTcpSocket;
+    type UdpSocket = TracedUdpSocket;
 }
 
-struct GatedSocketTypes {}
-
-impl Guest for GatedSocketTypes {
-    type TcpSocket = GatedTcpSocket;
-    type UdpSocket = GatedUdpSocket;
-}
-
-struct GatedTcpSocket {
+struct TracedTcpSocket {
     socket: types::TcpSocket,
 }
 
-impl GatedTcpSocket {
+impl TracedTcpSocket {
     fn new(socket: types::TcpSocket) -> Self {
         Self { socket }
     }
 }
 
-impl GuestTcpSocket for GatedTcpSocket {
+impl GuestTcpSocket for TracedTcpSocket {
     #[doc = "/ Create a new TCP socket."]
     #[doc = "/"]
     #[doc = "/ Similar to `socket(AF_INET or AF_INET6, SOCK_STREAM, IPPROTO_TCP)`"]
@@ -74,32 +59,10 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=socket&sektion=2>"]
     #[allow(async_fn_in_trait)]
     fn create(address_family: IpAddressFamily) -> Result<TcpSocket, ErrorCode> {
-        let call_summary = || {
-            format!(
-                "OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY={address_family}"
-            )
-        };
-
-        match authorize(&Operation::TcpSocket(TcpSocketOperation::Create(
-            componentized::sockets::latch::TcpSocketCreateArgs { address_family },
-        ))) {
-            Ok(Denied(reason)) => {
-                warn!("Denied REASON={reason} {}", call_summary());
-                Err(reason)?
-            }
-            Ok(Abstained) => {
-                let socket = types::TcpSocket::create(address_family)?;
-                Ok(TcpSocket::new(GatedTcpSocket::new(socket)))
-            }
-            Err(code) => {
-                error!(
-                    "Latch error CODE={code} {summary}",
-                    code = DisplayLatchError(&code),
-                    summary = call_summary()
-                );
-                Err(code)?
-            }
-        }
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY={address_family}");
+        Ok(TcpSocket::new(TracedTcpSocket::new(
+            types::TcpSocket::create(address_family)?,
+        )))
     }
 
     #[doc = "/ Bind the socket to the provided IP address and port."]
@@ -137,27 +100,8 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=bind&sektion=2&format=html>"]
     #[allow(async_fn_in_trait)]
     fn bind(&self, local_address: IpSocketAddress) -> Result<(), ErrorCode> {
-        let call_summary = || {
-            format!("OPERATION=wasi:sockets/types#tcp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}")
-        };
-        match authorize(&Operation::TcpSocket(TcpSocketOperation::Bind((
-            &self.socket,
-            componentized::sockets::latch::TcpSocketBindArgs { local_address },
-        )))) {
-            Ok(Denied(reason)) => {
-                warn!("Denied REASON={reason} {}", call_summary());
-                Err(reason)?
-            }
-            Ok(Abstained) => self.socket.bind(local_address).map_err(|val| val.into()),
-            Err(code) => {
-                error!(
-                    "Latch error CODE={code} {summary}",
-                    code = DisplayLatchError(&code),
-                    summary = call_summary()
-                );
-                Err(code)?
-            }
-        }
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}");
+        self.socket.bind(local_address)
     }
 
     #[doc = "/ Connect to a remote endpoint."]
@@ -196,29 +140,8 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?connect>"]
     #[allow(async_fn_in_trait)]
     async fn connect(&self, remote_address: IpSocketAddress) -> Result<(), ErrorCode> {
-        let call_summary = || {
-            format!(
-                "OPERATION=wasi:sockets/types#tcp-socket.connect SOCKET={self} REMOTE-ADDRESS={remote_address}"
-            )
-        };
-        match authorize(&Operation::TcpSocket(TcpSocketOperation::Connect((
-            &self.socket,
-            componentized::sockets::latch::TcpSocketConnectArgs { remote_address },
-        )))) {
-            Ok(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} {}", call_summary());
-                Err(error_code.into())
-            }
-            Ok(Abstained) => self.socket.connect(remote_address).await,
-            Err(code) => {
-                error!(
-                    "Latch error CODE={code} {summary}",
-                    code = DisplayLatchError(&code),
-                    summary = call_summary()
-                );
-                Err(code)?
-            }
-        }
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.connect SOCKET={self} REMOTE-ADDRESS={remote_address}");
+        self.socket.connect(remote_address).await
     }
 
     #[doc = "/ Start listening and return a stream of new inbound connections."]
@@ -293,63 +216,23 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=accept&sektion=2>"]
     #[allow(async_fn_in_trait)]
     fn listen(&self) -> Result<StreamReader<TcpSocket>, ErrorCode> {
-        let call_summary =
-            || format!("OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={self}");
-        match authorize(&Operation::TcpSocket(TcpSocketOperation::Listen((
-            &self.socket,
-        )))) {
-            Ok(Denied(reason)) => {
-                warn!("Denied REASON={reason} {}", call_summary());
-                Err(reason)?
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={self}");
+
+        let mut connections = self.socket.listen()?;
+        let (mut tx, rx) = wit_stream::new::<TcpSocket>();
+        // listen is a sync export, so forward connections from the background executor
+        componentized_rt::executor::spawn(async move {
+            while let Some(socket) = connections.next().await {
+                let socket = TracedTcpSocket::new(socket);
+                trace!("OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={socket}");
+                let socket = TcpSocket::new(socket);
+                if tx.write_one(socket).await.is_some() {
+                    // reader dropped, stop accepting connections
+                    break;
+                }
             }
-            Ok(Abstained) => {
-                let mut connections = self.socket.listen()?;
-                let (mut tx, rx) = wit_stream::new::<TcpSocket>();
-                // listen is a sync export, so forward connections from the background executor
-                componentized_rt::executor::spawn(async move {
-                    while let Some(socket) = connections.next().await {
-                        let call_summary = |socket| {
-                            format!(
-                                "OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={socket}"
-                            )
-                        };
-                        match authorize(&Operation::TcpSocket(
-                            TcpSocketOperation::ListenConnection((&socket,)),
-                        )) {
-                            Ok(Denied(reason)) => {
-                                warn!(
-                                    "Denied REASON={reason} {}",
-                                    call_summary(GatedTcpSocket::new(socket))
-                                );
-                            }
-                            Ok(Abstained) => {
-                                let socket = TcpSocket::new(GatedTcpSocket::new(socket));
-                                if tx.write_one(socket).await.is_some() {
-                                    // reader dropped, stop accepting connections
-                                    break;
-                                }
-                            }
-                            Err(code) => {
-                                error!(
-                                    "Latch error CODE={code} {summary}",
-                                    code = DisplayLatchError(&code),
-                                    summary = call_summary(GatedTcpSocket::new(socket))
-                                );
-                            }
-                        }
-                    }
-                });
-                Ok(rx)
-            }
-            Err(code) => {
-                error!(
-                    "Latch error CODE={code} {summary}",
-                    code = DisplayLatchError(&code),
-                    summary = call_summary()
-                );
-                Err(code)?
-            }
-        }
+        });
+        Ok(rx)
     }
 
     #[doc = "/ Transmit data to peer."]
@@ -379,6 +262,7 @@ impl GuestTcpSocket for GatedTcpSocket {
         &self,
         data: wit_bindgen::StreamReader<u8>,
     ) -> wit_bindgen::FutureReader<Result<(), ErrorCode>> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.send SOCKET={self}");
         self.socket.send(data)
     }
 
@@ -416,6 +300,7 @@ impl GuestTcpSocket for GatedTcpSocket {
         wit_bindgen::StreamReader<u8>,
         wit_bindgen::FutureReader<Result<(), ErrorCode>>,
     ) {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.receive SOCKET={self}");
         self.socket.receive()
     }
 
@@ -438,6 +323,7 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?getsockname>"]
     #[allow(async_fn_in_trait)]
     fn get_local_address(&self) -> Result<IpSocketAddress, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.get-local-address SOCKET={self}");
         self.socket.get_local_address()
     }
 
@@ -453,6 +339,7 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=getpeername&sektion=2&n=1>"]
     #[allow(async_fn_in_trait)]
     fn get_remote_address(&self) -> Result<IpSocketAddress, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.get-remote-address SOCKET={self}");
         self.socket.get_remote_address()
     }
 
@@ -461,6 +348,7 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ Equivalent to the SO_ACCEPTCONN socket option."]
     #[allow(async_fn_in_trait)]
     fn get_is_listening(&self) -> bool {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.get-is-listening SOCKET={self}");
         self.socket.get_is_listening()
     }
 
@@ -471,6 +359,7 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ Equivalent to the SO_DOMAIN socket option."]
     #[allow(async_fn_in_trait)]
     fn get_address_family(&self) -> IpAddressFamily {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.get-address-family SOCKET={self}");
         self.socket.get_address_family()
     }
 
@@ -487,6 +376,7 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - `invalid-state`:        (set) The socket is in the `connecting` or `connected` state."]
     #[allow(async_fn_in_trait)]
     fn set_listen_backlog_size(&self, value: u64) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-listen-backlog-size SOCKET={self} VALUE={value}");
         self.socket.set_listen_backlog_size(value)
     }
 
@@ -502,11 +392,13 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ Equivalent to the SO_KEEPALIVE socket option."]
     #[allow(async_fn_in_trait)]
     fn get_keep_alive_enabled(&self) -> Result<bool, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.get-keep-alive-enabled SOCKET={self}");
         self.socket.get_keep_alive_enabled()
     }
 
     #[allow(async_fn_in_trait)]
     fn set_keep_alive_enabled(&self, value: bool) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-enabled SOCKET={self} VALUE={value}");
         self.socket.set_keep_alive_enabled(value)
     }
 
@@ -524,11 +416,13 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - `invalid-argument`:     (set) The provided value was 0."]
     #[allow(async_fn_in_trait)]
     fn get_keep_alive_idle_time(&self) -> Result<Duration, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.get-keep-alive-idle-time SOCKET={self}");
         self.socket.get_keep_alive_idle_time()
     }
 
     #[allow(async_fn_in_trait)]
     fn set_keep_alive_idle_time(&self, value: Duration) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-idle-time SOCKET={self} VALUE={value}");
         self.socket.set_keep_alive_idle_time(value)
     }
 
@@ -545,11 +439,13 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - `invalid-argument`:     (set) The provided value was 0."]
     #[allow(async_fn_in_trait)]
     fn get_keep_alive_interval(&self) -> Result<Duration, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.get-keep-alive-interval SOCKET={self}");
         self.socket.get_keep_alive_interval()
     }
 
     #[allow(async_fn_in_trait)]
     fn set_keep_alive_interval(&self, value: Duration) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-interval SOCKET={self} VALUE={value}");
         self.socket.set_keep_alive_interval(value)
     }
 
@@ -567,11 +463,13 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - `invalid-argument`:     (set) The provided value was 0."]
     #[allow(async_fn_in_trait)]
     fn get_keep_alive_count(&self) -> Result<u32, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.get-keep-alive-count SOCKET={self}");
         self.socket.get_keep_alive_count()
     }
 
     #[allow(async_fn_in_trait)]
     fn set_keep_alive_count(&self, value: u32) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-count SOCKET={self} VALUE={value}");
         self.socket.set_keep_alive_count(value)
     }
 
@@ -583,11 +481,13 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - `invalid-argument`:     (set) The TTL value must be 1 or higher."]
     #[allow(async_fn_in_trait)]
     fn get_hop_limit(&self) -> Result<u8, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.get-hop-limit SOCKET={self}");
         self.socket.get_hop_limit()
     }
 
     #[allow(async_fn_in_trait)]
     fn set_hop_limit(&self, value: u8) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-hop-limit SOCKET={self} VALUE={value}");
         self.socket.set_hop_limit(value)
     }
 
@@ -614,36 +514,40 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[doc = "/ - `invalid-argument`:     (set) The provided value was 0."]
     #[allow(async_fn_in_trait)]
     fn get_receive_buffer_size(&self) -> Result<u64, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.get-receive-buffer-size SOCKET={self}");
         self.socket.get_receive_buffer_size()
     }
 
     #[allow(async_fn_in_trait)]
     fn set_receive_buffer_size(&self, value: u64) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-receive-buffer-size SOCKET={self} VALUE={value}");
         self.socket.set_receive_buffer_size(value)
     }
 
     #[allow(async_fn_in_trait)]
     fn get_send_buffer_size(&self) -> Result<u64, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.get-send-buffer-size SOCKET={self}");
         self.socket.get_send_buffer_size()
     }
 
     #[allow(async_fn_in_trait)]
     fn set_send_buffer_size(&self, value: u64) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-send-buffer-size SOCKET={self} VALUE={value}");
         self.socket.set_send_buffer_size(value)
     }
 }
 
-struct GatedUdpSocket {
+struct TracedUdpSocket {
     socket: types::UdpSocket,
 }
 
-impl GatedUdpSocket {
+impl TracedUdpSocket {
     fn new(socket: types::UdpSocket) -> Self {
         Self { socket }
     }
 }
 
-impl GuestUdpSocket for GatedUdpSocket {
+impl GuestUdpSocket for TracedUdpSocket {
     #[doc = "/ Create a new UDP socket."]
     #[doc = "/"]
     #[doc = "/ Similar to `socket(AF_INET or AF_INET6, SOCK_DGRAM, IPPROTO_UDP)`"]
@@ -661,31 +565,9 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=socket&sektion=2>"]
     #[allow(async_fn_in_trait)]
     fn create(address_family: IpAddressFamily) -> Result<UdpSocket, ErrorCode> {
-        let call_summary = || {
-            format!(
-                "OPERATION=wasi:sockets/types#udp-socket.create ADDRESS-FAMILY={address_family}"
-            )
-        };
-        match authorize(&Operation::UdpSocket(UdpSocketOperation::Create(
-            componentized::sockets::latch::UdpSocketCreateArgs { address_family },
-        ))) {
-            Ok(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} {}", call_summary());
-                Err(error_code.into())
-            }
-            Ok(Abstained) => {
-                let socket = types::UdpSocket::create(address_family)?;
-                Ok(UdpSocket::new(GatedUdpSocket::new(socket)))
-            }
-            Err(code) => {
-                error!(
-                    "Latch error CODE={code} {summary}",
-                    code = DisplayLatchError(&code),
-                    summary = call_summary()
-                );
-                Err(code)?
-            }
-        }
+        trace!("OPERATION=wasi:sockets/types#udp-socket.create ADDRESS-FAMILY={address_family}");
+        let socket = types::UdpSocket::create(address_family)?;
+        Ok(UdpSocket::new(TracedUdpSocket::new(socket)))
     }
 
     #[doc = "/ Bind the socket to the provided IP address and port."]
@@ -709,27 +591,8 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=bind&sektion=2&format=html>"]
     #[allow(async_fn_in_trait)]
     fn bind(&self, local_address: IpSocketAddress) -> Result<(), ErrorCode> {
-        let call_summary = || {
-            format!("OPERATION=wasi:sockets/types#udp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}")
-        };
-        match authorize(&Operation::UdpSocket(UdpSocketOperation::Bind((
-            &self.socket,
-            componentized::sockets::latch::UdpSocketBindArgs { local_address },
-        )))) {
-            Ok(Denied(reason)) => {
-                warn!("Denied REASON={reason} {}", call_summary());
-                Err(reason.into())
-            }
-            Ok(Abstained) => self.socket.bind(local_address),
-            Err(code) => {
-                error!(
-                    "Latch error CODE={code} {summary}",
-                    code = DisplayLatchError(&code),
-                    summary = call_summary()
-                );
-                Err(code)?
-            }
-        }
+        trace!("OPERATION=wasi:sockets/types#udp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}");
+        self.socket.bind(local_address)
     }
 
     #[doc = "/ Associate this socket with a specific peer address."]
@@ -770,29 +633,8 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?connect>"]
     #[allow(async_fn_in_trait)]
     fn connect(&self, remote_address: IpSocketAddress) -> Result<(), ErrorCode> {
-        let call_summary = || {
-            format!(
-                "OPERATION=wasi:sockets/types#udp-socket.connect SOCKET={self} REMOTE-ADDRESS={remote_address}"
-            )
-        };
-        match authorize(&Operation::UdpSocket(UdpSocketOperation::Connect((
-            &self.socket,
-            componentized::sockets::latch::UdpSocketConnectArgs { remote_address },
-        )))) {
-            Ok(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} {}", call_summary());
-                Err(error_code.into())
-            }
-            Ok(Abstained) => self.socket.connect(remote_address),
-            Err(code) => {
-                error!(
-                    "Latch error CODE={code} {summary}",
-                    code = DisplayLatchError(&code),
-                    summary = call_summary()
-                );
-                Err(code)?
-            }
-        }
+        trace!("OPERATION=wasi:sockets/types#udp-socket.connect SOCKET={self} REMOTE-ADDRESS={remote_address}");
+        self.socket.connect(remote_address)
     }
 
     #[doc = "/ Dissociate this socket from its peer address."]
@@ -812,6 +654,7 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?connect>"]
     #[allow(async_fn_in_trait)]
     fn disconnect(&self) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#udp-socket.disconnect SOCKET={self}");
         self.socket.disconnect()
     }
 
@@ -863,34 +706,12 @@ impl GuestUdpSocket for GatedUdpSocket {
         data: Vec<u8>,
         remote_address: Option<IpSocketAddress>,
     ) -> Result<(), ErrorCode> {
-        let call_summary = || {
-            format!(
-                "OPERATION=wasi:sockets/types#udp-socket.send SOCKET={self} DATA-LENGTH={} REMOTE-ADDRESS={}",
-                data.len(),
-                DisplayOption(remote_address)
-            )
-        };
-        match authorize(&Operation::UdpSocket(UdpSocketOperation::Send((
-            &self.socket,
-            componentized::sockets::latch::UdpSocketSendArgs {
-                data_length: data.len().try_into().expect("data length exceeded 64 bits"),
-                remote_address,
-            },
-        )))) {
-            Ok(Denied(error_code)) => {
-                warn!("Denied REASON={error_code} {}", call_summary());
-                Err(error_code.into())
-            }
-            Ok(Abstained) => self.socket.send(data, remote_address).await,
-            Err(code) => {
-                error!(
-                    "Latch error CODE={code} {summary}",
-                    code = DisplayLatchError(&code),
-                    summary = call_summary()
-                );
-                Err(code)?
-            }
-        }
+        trace!(
+            "OPERATION=wasi:sockets/types#udp-socket.send SOCKET={self} DATA-LENGTH={} REMOTE-ADDRESS={}",
+            data.len(),
+            DisplayOption(remote_address)
+        );
+        self.socket.send(data, remote_address).await
     }
 
     #[doc = "/ Receive a message on the socket."]
@@ -918,39 +739,8 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=recv&sektion=2>"]
     #[allow(async_fn_in_trait)]
     async fn receive(&self) -> Result<(Vec<u8>, IpSocketAddress), ErrorCode> {
-        match self.socket.receive().await {
-            Ok((data, remote_address)) => {
-                let call_summary = || {
-                    format!(
-                        "OPERATION=wasi:sockets/types#udp-socket.receive SOCKET={self} DATA-LENGTH={} REMOTE-ADDRESS={}",
-                        data.len(),
-                        remote_address
-                    )
-                };
-                match authorize(&Operation::UdpSocket(UdpSocketOperation::Receive((
-                    &self.socket,
-                    componentized::sockets::latch::UdpSocketReceiveReturns {
-                        data_length: data.len().try_into().expect("data length exceeded 64 bits"),
-                        remote_address,
-                    },
-                )))) {
-                    Ok(Denied(error_code)) => {
-                        warn!("Denied REASON={error_code} {}", call_summary());
-                        Err(error_code.into())
-                    }
-                    Ok(Abstained) => Ok((data, remote_address)),
-                    Err(code) => {
-                        error!(
-                            "Latch error CODE={code} {summary}",
-                            code = DisplayLatchError(&code),
-                            summary = call_summary()
-                        );
-                        Err(code)?
-                    }
-                }
-            }
-            Err(error_code) => Err(error_code),
-        }
+        trace!("OPERATION=wasi:sockets/types#udp-socket.receive SOCKET={self}");
+        self.socket.receive().await
     }
 
     #[doc = "/ Get the current bound address."]
@@ -972,6 +762,7 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?getsockname>"]
     #[allow(async_fn_in_trait)]
     fn get_local_address(&self) -> Result<IpSocketAddress, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#udp-socket.get-local-address SOCKET={self}");
         self.socket.get_local_address()
     }
 
@@ -987,6 +778,7 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=getpeername&sektion=2&n=1>"]
     #[allow(async_fn_in_trait)]
     fn get_remote_address(&self) -> Result<IpSocketAddress, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#udp-socket.get-remote-address SOCKET={self}");
         self.socket.get_remote_address()
     }
 
@@ -997,6 +789,7 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ Equivalent to the SO_DOMAIN socket option."]
     #[allow(async_fn_in_trait)]
     fn get_address_family(&self) -> IpAddressFamily {
+        trace!("OPERATION=wasi:sockets/types#udp-socket.get-address-family SOCKET={self}");
         self.socket.get_address_family()
     }
 
@@ -1008,11 +801,13 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - `invalid-argument`:     (set) The TTL value must be 1 or higher."]
     #[allow(async_fn_in_trait)]
     fn get_unicast_hop_limit(&self) -> Result<u8, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#udp-socket.get-unicast-hop-limit SOCKET={self}");
         self.socket.get_unicast_hop_limit()
     }
 
     #[allow(async_fn_in_trait)]
     fn set_unicast_hop_limit(&self, value: u8) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#udp-socket.set-unicast-hop-limit SOCKET={self} VALUE={value}");
         self.socket.set_unicast_hop_limit(value)
     }
 
@@ -1031,47 +826,30 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - `invalid-argument`:     (set) The provided value was 0."]
     #[allow(async_fn_in_trait)]
     fn get_receive_buffer_size(&self) -> Result<u64, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#udp-socket.get-receive-buffer-size SOCKET={self}");
         self.socket.get_receive_buffer_size()
     }
 
     #[allow(async_fn_in_trait)]
     fn set_receive_buffer_size(&self, value: u64) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#udp-socket.set-recieve-buffer-size SOCKET={self} VALUE={value}");
         self.socket.set_receive_buffer_size(value)
     }
 
     #[allow(async_fn_in_trait)]
     fn get_send_buffer_size(&self) -> Result<u64, ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#udp-socket.get-send-buffer-size SOCKET={self}");
         self.socket.get_send_buffer_size()
     }
 
     #[allow(async_fn_in_trait)]
     fn set_send_buffer_size(&self, value: u64) -> Result<(), ErrorCode> {
+        trace!("OPERATION=wasi:sockets/types#udp-socket.set-send-buffer-size SOCKET={self} VALUE={value}");
         self.socket.set_send_buffer_size(value)
     }
 }
 
-impl From<SocketsErrorCode> for ErrorCode {
-    fn from(value: SocketsErrorCode) -> Self {
-        match value {
-            SocketsErrorCode::AccessDenied => Self::AccessDenied,
-            SocketsErrorCode::InvalidArgument => Self::InvalidArgument,
-            SocketsErrorCode::Other(message) => Self::Other(message),
-        }
-    }
-}
-
-impl From<LatchErrorCode> for ErrorCode {
-    fn from(value: LatchErrorCode) -> Self {
-        match value {
-            LatchErrorCode::Other(Some(message)) => {
-                Self::Other(Some(format!("latch-error: {message}")))
-            }
-            LatchErrorCode::Other(None) => Self::Other(Some("latch-error".to_string())),
-        }
-    }
-}
-
-impl fmt::Display for GatedTcpSocket {
+impl fmt::Display for TracedTcpSocket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let local_addr = self.socket.get_local_address().ok();
         let remote_addr = self.socket.get_remote_address().ok();
@@ -1087,7 +865,7 @@ impl fmt::Display for GatedTcpSocket {
     }
 }
 
-impl fmt::Display for GatedUdpSocket {
+impl fmt::Display for TracedUdpSocket {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         let local_addr = self.socket.get_local_address().ok();
         let remote_addr = self.socket.get_remote_address().ok();
@@ -1099,27 +877,6 @@ impl fmt::Display for GatedUdpSocket {
             (Some(local_addr), Some(remote_addr)) => {
                 f.write_fmt(format_args!("{local_addr}<->{remote_addr}"))
             }
-        }
-    }
-}
-
-impl fmt::Display for SocketsErrorCode {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self::AccessDenied => f.write_str("access-denied"),
-            Self::InvalidArgument => f.write_str("invalid-argument"),
-            Self::Other(Some(message)) => f.write_str(message),
-            Self::Other(None) => f.write_str("other"),
-        }
-    }
-}
-
-struct DisplayLatchError<'a>(&'a LatchErrorCode);
-impl fmt::Display for DisplayLatchError<'_> {
-    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Self(LatchErrorCode::Other(Some(message))) => f.write_str(message),
-            Self(LatchErrorCode::Other(None)) => f.write_str("other"),
         }
     }
 }
@@ -1170,9 +927,9 @@ impl<T: fmt::Display> fmt::Display for DisplayOption<T> {
 
 wit_bindgen::generate!({
     path: "../wit",
-    world: "gated-types",
+    world: "traced-types",
     merge_structurally_equal_types: true,
     generate_all
 });
 
-export!(GatedSocketTypes);
+export!(TracedSocketTypes);

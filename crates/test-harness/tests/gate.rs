@@ -1,7 +1,7 @@
 //! Tests for the composed `gate` component, which has no crate of its own. Tests for the
 //! individual gates live with each gate component.
 
-use gate_tests::{Harness, HostLatch, IpAddressFamily};
+use test_harness::{Harness, HostLatch, IpAddressFamily};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn exports_gated_types_and_ip_name_lookup() -> wasmtime::Result<()> {

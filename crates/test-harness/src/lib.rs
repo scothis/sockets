@@ -1,9 +1,9 @@
-//! Test harness for the gate components.
+//! Test harness for the gate, latch and trace components.
 //!
-//! A [`Harness`] instantiates a gate component (`lib/*.wasm`) with real
+//! A [`Harness`] instantiates a component (`lib/*.wasm`) with real
 //! upstream sockets from wasmtime-wasi, a scripted [`HostLatch`], and captured
 //! `wasi:logging` output. Latch components from `lib/` can be installed in
-//! front of the host latch, they are composed into the gate before it is
+//! front of the host latch, they are composed into the component before it is
 //! instantiated.
 
 use std::collections::HashSet;
@@ -35,16 +35,16 @@ pub mod bindings {
     wasmtime::component::bindgen!({
         path: "../../components/wit",
         inline: "
-            package componentized:gate-tests;
+            package componentized:test-harness;
 
-            world gate {
+            world harness {
                 import componentized:sockets/latch@0.0.0-dev;
                 import wasi:logging/logging@0.1.0-draft;
                 export wasi:sockets/types@0.3.0;
                 export wasi:sockets/ip-name-lookup@0.3.0;
             }
         ",
-        world: "componentized:gate-tests/gate",
+        world: "componentized:test-harness/harness",
         exports: { default: async | store },
         with: {
             "wasi:sockets": wasmtime_wasi::p3::bindings::sockets,
@@ -193,7 +193,7 @@ pub struct Authorization {
     pub args: String,
 }
 
-/// A message logged by the gate via `wasi:logging`.
+/// A message logged by the test subject via `wasi:logging`.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub struct LogEntry {
     pub level: Level,
@@ -202,25 +202,25 @@ pub struct LogEntry {
 }
 
 impl LogEntry {
-    /// A trace logged by the gate.
-    pub fn trace(message: impl Into<String>) -> Self {
-        Self::gate(Level::Trace, message)
+    /// A trace logged by the test subject.
+    pub fn trace(context: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::log(Level::Trace, context, message)
     }
 
-    /// A warning logged by the gate.
-    pub fn warn(message: impl Into<String>) -> Self {
-        Self::gate(Level::Warn, message)
+    /// A warning logged by the test subject.
+    pub fn warn(context: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::log(Level::Warn, context, message)
     }
 
-    /// An error logged by the gate.
-    pub fn error(message: impl Into<String>) -> Self {
-        Self::gate(Level::Error, message)
+    /// An error logged by the test subject.
+    pub fn error(context: impl Into<String>, message: impl Into<String>) -> Self {
+        Self::log(Level::Error, context, message)
     }
 
-    fn gate(level: Level, message: impl Into<String>) -> Self {
+    fn log(level: Level, context: impl Into<String>, message: impl Into<String>) -> Self {
         Self {
             level,
-            context: "componentized-gate".to_string(),
+            context: context.into(),
             message: message.into(),
         }
     }
@@ -270,7 +270,7 @@ impl HostLatch {
     }
 }
 
-/// Observations recorded while the gate runs.
+/// Observations recorded while the test subject runs.
 #[derive(Clone, Default)]
 pub struct Recorder {
     authorizations: Arc<Mutex<Vec<Authorization>>>,
@@ -291,7 +291,7 @@ impl Recorder {
             .collect()
     }
 
-    /// Messages logged by the gate, in order.
+    /// Messages logged by the test subject, in order.
     pub fn logs(&self) -> Vec<LogEntry> {
         self.logs.lock().unwrap().clone()
     }
@@ -371,18 +371,18 @@ fn describe(operation: &Operation) -> Authorization {
     }
 }
 
-/// Builds a gate instance for a test.
+/// Builds a subject instance for a test.
 pub struct Harness {
-    gate: String,
+    subject: String,
     latches: Vec<String>,
     host_latch: HostLatch,
 }
 
 impl Harness {
-    /// Test the named gate component from `lib/`, e.g. `gate`.
-    pub fn new(gate: &str) -> Self {
+    /// Test the named component from `lib/`, e.g. `gate`.
+    pub fn new(component_name: &str) -> Self {
         Self {
-            gate: gate.to_string(),
+            subject: component_name.to_string(),
             latches: vec![],
             host_latch: HostLatch::abstain(),
         }
@@ -391,7 +391,7 @@ impl Harness {
     /// Install a latch component from `lib/` in front of the host latch.
     ///
     /// Latches are chained in the order installed, the first latch is
-    /// consulted by the gate directly. A latch that delegates to its upstream
+    /// consulted by the test subject directly. A latch that delegates to its upstream
     /// latch reaches the next installed latch, and finally the host latch.
     pub fn latch(mut self, name: &str) -> Self {
         self.latches.push(name.to_string());
@@ -404,8 +404,8 @@ impl Harness {
         self
     }
 
-    /// Compose and instantiate the gate.
-    pub async fn build(self) -> Result<Gate> {
+    /// Compose and instantiate the test subject.
+    pub async fn build(self) -> Result<TestSubject> {
         let mut config = Config::new();
         config.wasm_component_model_async(true);
         config.wasm_component_model_threading(true);
@@ -440,9 +440,9 @@ impl Harness {
         let instance = instance_pre
             .instantiate_async(&mut store)
             .await
-            .with_context(|| format!("failed to instantiate {}", self.gate))?;
+            .with_context(|| format!("failed to instantiate {}", self.subject))?;
         let exports = Exports {
-            name: self.gate,
+            name: self.subject,
             types: match types::GuestIndices::new(&instance_pre) {
                 Ok(indices) => Some(indices.load(&mut store, &instance)?),
                 Err(_) => None,
@@ -453,7 +453,7 @@ impl Harness {
             },
         };
 
-        Ok(Gate {
+        Ok(TestSubject {
             store,
             exports,
             recorder,
@@ -461,7 +461,7 @@ impl Harness {
     }
 
     fn compose(&self) -> Result<Vec<u8>> {
-        let mut names = vec![self.gate.as_str()];
+        let mut names = vec![self.subject.as_str()];
         names.extend(self.latches.iter().map(String::as_str));
         ensure_built(&names)?;
 
@@ -470,12 +470,12 @@ impl Harness {
             std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))
         };
 
-        let mut bytes = read(&self.gate)?;
+        let mut bytes = read(&self.subject)?;
         if self.latches.is_empty() {
             return Ok(bytes);
         }
 
-        // plug the latches into each other from the host side outward, then into the gate
+        // plug the latches into each other from the host side outward, then into the test subject
         let mut upstream: Option<Vec<u8>> = None;
         for name in self.latches.iter().rev() {
             let latch = read(name)?;
@@ -484,7 +484,7 @@ impl Harness {
                 None => latch,
             });
         }
-        bytes = plug(&self.gate, bytes, upstream.unwrap())?;
+        bytes = plug(&self.subject, bytes, upstream.unwrap())?;
         Ok(bytes)
     }
 }
@@ -504,9 +504,9 @@ fn plug(name: &str, socket: Vec<u8>, plug: Vec<u8>) -> Result<Vec<u8>> {
     Ok(graph.encode(EncodeOptions::default())?)
 }
 
-/// The gate's exported interfaces.
+/// The test subject's exported interfaces.
 ///
-/// A gate component may export either or both interfaces, accessing an interface the component
+/// A test subject component may export either or both interfaces, accessing an interface the component
 /// does not export panics.
 pub struct Exports {
     name: String,
@@ -530,20 +530,20 @@ impl Exports {
     }
 }
 
-/// An instantiated gate.
-pub struct Gate {
+/// An instantiated test subject.
+pub struct TestSubject {
     store: Store<Ctx>,
     exports: Exports,
     recorder: Recorder,
 }
 
-impl Gate {
+impl TestSubject {
     /// Observations recorded by the host latch and logger.
     pub fn recorder(&self) -> Recorder {
         self.recorder.clone()
     }
 
-    /// Run a test body against the gate's exports.
+    /// Run a test body against the test subject's exports.
     pub async fn run<R: Send + 'static>(
         &mut self,
         f: impl AsyncFnOnce(&Accessor<Ctx>, &Exports) -> Result<R> + Send,

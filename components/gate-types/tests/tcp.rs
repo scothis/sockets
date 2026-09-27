@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use gate_tests::{
+use test_harness::{
     collect, ip_socket_address, loopback, socket_addr, ErrorCode, Harness, HostLatch,
     IpAddressFamily, LogEntry,
 };
@@ -38,6 +38,7 @@ async fn create_denied() -> wasmtime::Result<()> {
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(
+            "componentized-gate",
             "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY=IPv4"
         )]
     );
@@ -62,6 +63,7 @@ async fn create_latch_error() -> wasmtime::Result<()> {
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::error(
+            "componentized-gate",
             "Latch error CODE=boom OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY=IPv4"
         )]
     );
@@ -90,7 +92,8 @@ async fn bind_denied_by_latch_component() -> wasmtime::Result<()> {
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(
-            "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.bind LOCAL-ADDRESS=127.0.0.1:0"
+            "componentized-gate",
+            "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.bind SOCKET=--- LOCAL-ADDRESS=127.0.0.1:0"
         )]
     );
     Ok(())
@@ -151,8 +154,9 @@ async fn connect_denied_by_latch_component() -> wasmtime::Result<()> {
     );
     assert_eq!(
         gate.recorder().logs(),
-        vec![LogEntry::warn(format!(
-            "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.connect REMOTE-ADDRESS={}",
+        vec![LogEntry::warn(
+            "componentized-gate",format!(
+            "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.connect SOCKET=--- REMOTE-ADDRESS={}",
             listener.local_addr()?
         ))]
     );
@@ -165,7 +169,7 @@ async fn listen_denied() -> wasmtime::Result<()> {
         .host_latch(HostLatch::deny(&["tcp-socket.listen"]))
         .build()
         .await?;
-    let denied = gate
+    let (denied, local_address) = gate
         .run(async |accessor, gate| {
             let tcp = gate.wasi_sockets_types().tcp_socket();
             let socket = tcp
@@ -175,17 +179,23 @@ async fn listen_denied() -> wasmtime::Result<()> {
             tcp.call_bind(accessor, socket, loopback(0))
                 .await?
                 .expect("bind");
-            Ok(matches!(
+            let local_address = tcp
+                .call_get_local_address(accessor, socket)
+                .await?
+                .expect("local address");
+            let denied = matches!(
                 tcp.call_listen(accessor, socket).await?,
                 Err(ErrorCode::AccessDenied)
-            ))
+            );
+            Ok((denied, socket_addr(local_address)))
         })
         .await?;
     assert!(denied);
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(
-            "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.listen"
+            "componentized-gate",
+            format!("Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={local_address}<--")
         )]
     );
     Ok(())
@@ -235,32 +245,34 @@ async fn listen_connection_denied() -> wasmtime::Result<()> {
         .host_latch(HostLatch::deny(&["tcp-socket.listen.connection"]))
         .build()
         .await?;
-    gate.run(async |accessor, gate| {
-        let tcp = gate.wasi_sockets_types().tcp_socket();
-        let socket = tcp
-            .call_create(accessor, IpAddressFamily::Ipv4)
-            .await?
-            .expect("create");
-        tcp.call_bind(accessor, socket, loopback(0))
-            .await?
-            .expect("bind");
-        let connections = tcp.call_listen(accessor, socket).await?.expect("listen");
-        let address = tcp
-            .call_get_local_address(accessor, socket)
-            .await?
-            .expect("local address");
-        let mut connections = collect(accessor, connections)?;
+    let (local_address, remote_address) = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            let socket = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            tcp.call_bind(accessor, socket, loopback(0))
+                .await?
+                .expect("bind");
+            let connections = tcp.call_listen(accessor, socket).await?.expect("listen");
+            let address = tcp
+                .call_get_local_address(accessor, socket)
+                .await?
+                .expect("local address");
+            let mut connections = collect(accessor, connections)?;
 
-        let _client = TcpStream::connect(socket_addr(address)).await?;
-        assert!(
-            timeout(Duration::from_millis(500), connections.recv())
-                .await
-                .is_err(),
-            "denied connection should not be forwarded"
-        );
-        Ok(())
-    })
-    .await?;
+            let client = TcpStream::connect(socket_addr(address)).await?;
+            assert!(
+                timeout(Duration::from_millis(500), connections.recv())
+                    .await
+                    .is_err(),
+                "denied connection should not be forwarded"
+            );
+            // the accepted connection is local to the listener, and remote to the client
+            Ok((socket_addr(address), client.local_addr()?))
+        })
+        .await?;
     assert!(gate
         .recorder()
         .operations()
@@ -268,7 +280,8 @@ async fn listen_connection_denied() -> wasmtime::Result<()> {
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(
-            "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.listen.connection"
+            "componentized-gate",
+            format!("Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={local_address}<->{remote_address}")
         )]
     );
     Ok(())
@@ -288,7 +301,9 @@ async fn listen_forwards_connections_from_multiple_listeners() -> wasmtime::Resu
             .call_create(accessor, IpAddressFamily::Ipv4)
             .await?
             .expect("create");
-        tcp.call_bind(accessor, first, loopback(0)).await?.expect("bind");
+        tcp.call_bind(accessor, first, loopback(0))
+            .await?
+            .expect("bind");
         let first_connections = tcp.call_listen(accessor, first).await?.expect("listen");
         let first_address = tcp
             .call_get_local_address(accessor, first)
@@ -314,7 +329,9 @@ async fn listen_forwards_connections_from_multiple_listeners() -> wasmtime::Resu
             .call_create(accessor, IpAddressFamily::Ipv4)
             .await?
             .expect("create");
-        tcp.call_bind(accessor, second, loopback(0)).await?.expect("bind");
+        tcp.call_bind(accessor, second, loopback(0))
+            .await?
+            .expect("bind");
         let second_connections = tcp.call_listen(accessor, second).await?.expect("listen");
         let second_address = tcp
             .call_get_local_address(accessor, second)

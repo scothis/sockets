@@ -1,4 +1,4 @@
-use gate_tests::{Harness, HostLatch, LogEntry};
+use test_harness::{Harness, HostLatch, LogEntry};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn resolve_addresses_abstained() -> wasmtime::Result<()> {
@@ -44,6 +44,7 @@ async fn resolve_addresses_denied() -> wasmtime::Result<()> {
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(
+            "componentized-gate",
             "Denied REASON=access-denied OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME=localhost"
         )]
     );

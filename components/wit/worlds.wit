@@ -30,3 +30,15 @@ world sockets-latch-n {
     import latch3: componentized:sockets/latch@0.0.0-dev;
     import latch4: componentized:sockets/latch@0.0.0-dev;
 }
+
+world traced-ip-name-lookup {
+    import wasi:logging/logging@0.1.0-draft;
+    import wasi:sockets/ip-name-lookup@0.3.0;
+    export wasi:sockets/ip-name-lookup@0.3.0;
+}
+
+world traced-types {
+    import wasi:logging/logging@0.1.0-draft;
+    import wasi:sockets/types@0.3.0;
+    export wasi:sockets/types@0.3.0;
+}

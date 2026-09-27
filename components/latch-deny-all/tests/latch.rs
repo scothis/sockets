@@ -1,4 +1,4 @@
-use gate_tests::{ErrorCode, Harness, IpAddressFamily, LogEntry};
+use test_harness::{ErrorCode, Harness, IpAddressFamily, LogEntry};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn denies_tcp_socket_create() -> wasmtime::Result<()> {
@@ -18,6 +18,7 @@ async fn denies_tcp_socket_create() -> wasmtime::Result<()> {
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(
+            "componentized-gate",
             "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY=IPv4"
         )]
     );

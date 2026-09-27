@@ -11,6 +11,6 @@ crate-type = ["cdylib"]
 wit-bindgen = { workspace = true }
 
 [dev-dependencies]
-gate-tests = { workspace = true }
+test-harness = { workspace = true }
 tokio = { workspace = true }
 wasmtime = { workspace = true }

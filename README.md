@@ -16,8 +16,7 @@ A collection of utility components that remix wasi:socket types and interfaces.
 
 - [`gate`](./components/gate/)
 - [`gate-ip-name-lookp`](./components/gate-ip-name-lookp/)
-- [`gate-tcp`](./components/gate-tcp/)
-- [`gate-udp`](./components/gate-udp/)
+- [`gate-types`](./components/gate-types/)
 - [`latch-n2`](./components/latch-n2/)
 - [`latch-n3`](./components/latch-n3/)
 - [`latch-n4`](./components/latch-n4/)
@@ -28,6 +27,9 @@ A collection of utility components that remix wasi:socket types and interfaces.
 - [`latch-deny-ipv6`](./components/latch-deny-ipv6/)
 - [`latch-grant-all`](./components/latch-grant-all/)
 - [`latch-ip-name-lookup-glob`](./components/latch-ip-name-lookup-glob/)
+- [`trace`](./components/trace/)
+- [`trace-ip-name-lookp`](./components/trace-ip-name-lookp/)
+- [`trace-types`](./components/trace-types/)
 
 ## Build
 
