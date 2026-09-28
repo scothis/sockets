@@ -3,7 +3,7 @@ use std::time::Duration;
 use test_harness::bindings::componentized::sockets::latch::{Decision, SocketsErrorCode};
 use test_harness::{
     collect, ip_socket_address, loopback, socket_addr, stream, ErrorCode, Harness, HostLatch,
-    IpAddressFamily, LogEntry,
+    IpAddressFamily, LogEntry, Observation,
 };
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -16,8 +16,10 @@ async fn udp_send_denied_to_matching_range() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 
+    // aggregated with the host latch, which abstains from everything
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
+        .host_latch(HostLatch::abstain())
         .config("deny", "127.0.0.0/8")
         .build()
         .await?;
@@ -50,10 +52,18 @@ async fn udp_send_denied_to_matching_range() -> wasmtime::Result<()> {
             .is_err(),
         "no datagram should reach the peer"
     );
-    // every operation is delegated to the nested latch before this latch decides
+    // latch-n stops at the first denial, the host latch is not asked about the send but observes
+    // the final decision
     assert_eq!(
         gate.recorder().operations(),
-        vec!["udp-socket.create", "udp-socket.bind", "udp-socket.send"]
+        vec!["udp-socket.create", "udp-socket.bind"]
+    );
+    assert_eq!(
+        gate.recorder().observations().last(),
+        Some(&Observation {
+            operation: "udp-socket.send".to_string(),
+            denied: true,
+        })
     );
     assert_eq!(
         gate.recorder().logs(),
@@ -470,13 +480,13 @@ async fn udp_reply_on_connected_socket_abstained() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn udp_receive_denied_by_nested_latch_is_not_return_traffic() -> wasmtime::Result<()> {
+async fn udp_receive_denied_by_aggregated_latch_is_not_return_traffic() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let peer_address = ip_socket_address(peer.local_addr()?);
     let other = UdpSocket::bind("127.0.0.1:0").await?;
     let other_address = ip_socket_address(other.local_addr()?);
 
-    // the nested latch denies the first datagram, from the peer
+    // the aggregated latch denies the first datagram, from the peer
     let mut denied = false;
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
@@ -528,11 +538,11 @@ async fn udp_receive_denied_by_nested_latch_is_not_return_traffic() -> wasmtime:
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn nested_latch_denial_passes_through() -> wasmtime::Result<()> {
+async fn aggregated_latch_denial_passes_through() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
-    // a distinct reason shows the nested latch's decision is returned, the ranges would abstain
+    // a distinct reason shows the aggregated latch's decision is returned, the ranges would abstain
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
         .host_latch(HostLatch::new(|auth| {
@@ -559,7 +569,7 @@ async fn nested_latch_denial_passes_through() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn nested_latch_error_passes_through() -> wasmtime::Result<()> {
+async fn aggregated_latch_error_passes_through() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
         .host_latch(HostLatch::error("boom"))
@@ -578,7 +588,7 @@ async fn nested_latch_error_passes_through() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn nested_latch_component() -> wasmtime::Result<()> {
+async fn aggregated_latch_component() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 

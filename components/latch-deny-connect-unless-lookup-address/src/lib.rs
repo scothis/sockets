@@ -4,9 +4,10 @@ use std::{
     net::{IpAddr, Ipv4Addr, Ipv6Addr},
 };
 
-use crate::componentized::sockets::latch;
 use crate::exports::componentized::sockets::latch::{
-    Decision, ErrorCode, Guest as Latch, IpAddress, IpSocketAddress, Operation, SocketsErrorCode,
+    Decision, ErrorCode, Guest as Latch, IpAddress, IpNameLookupOperation, IpSocketAddress,
+    Operation, ResolveAddressesReturnsItem, SocketsErrorCode, TcpSocketOperation,
+    UdpSocketOperation,
 };
 
 struct State {
@@ -55,62 +56,57 @@ fn ip_addr(ip_address: IpAddress) -> IpAddr {
 
 struct DenyConnectUnlessLookUpAddressLatch {}
 
+fn known_address(remote_address: IpSocketAddress) -> Result<Decision, ErrorCode> {
+    match State::is_known_address(remote_address) {
+        true => Ok(Decision::Abstained),
+        false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
+    }
+}
+
 impl Latch for DenyConnectUnlessLookUpAddressLatch {
     fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
-        let operation = operation.into();
-        let decision = match latch::authorize(&operation)? {
-            latch::Decision::Denied(error_code) => Ok(Decision::Denied(error_code.into())),
-            latch::Decision::Abstained => match &operation {
-                latch::Operation::IpNameLookup(_) => Ok(Decision::Abstained),
-                latch::Operation::TcpSocket(tcp_socket_operation) => match tcp_socket_operation {
-                    latch::TcpSocketOperation::Create(_) => Ok(Decision::Abstained),
-                    latch::TcpSocketOperation::Bind(_) => Ok(Decision::Abstained),
-                    latch::TcpSocketOperation::Connect((_, tcp_socket_connect_args)) => {
-                        match State::is_known_address(tcp_socket_connect_args.remote_address) {
-                            true => Ok(Decision::Abstained),
-                            false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
-                        }
-                    }
-                    latch::TcpSocketOperation::Listen(_) => Ok(Decision::Abstained),
-                    latch::TcpSocketOperation::ListenConnection(_) => Ok(Decision::Abstained),
-                    latch::TcpSocketOperation::Send(_) => Ok(Decision::Abstained),
-                    latch::TcpSocketOperation::Receive(_) => Ok(Decision::Abstained),
-                },
-                latch::Operation::UdpSocket(udp_socket_operation) => match udp_socket_operation {
-                    latch::UdpSocketOperation::Create(_) => Ok(Decision::Abstained),
-                    latch::UdpSocketOperation::Bind(_) => Ok(Decision::Abstained),
-                    latch::UdpSocketOperation::Connect((_, udp_socket_connect_args)) => {
-                        match State::is_known_address(udp_socket_connect_args.remote_address) {
-                            true => Ok(Decision::Abstained),
-                            false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
-                        }
-                    }
-                    latch::UdpSocketOperation::Send((_, udp_socket_send_args)) => {
-                        match udp_socket_send_args.remote_address {
-                            Some(remote_address) => match State::is_known_address(remote_address) {
-                                true => Ok(Decision::Abstained),
-                                false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
-                            },
-                            None => Ok(Decision::Abstained),
-                        }
-                    }
-                    latch::UdpSocketOperation::Receive(_) => Ok(Decision::Abstained),
-                },
+        match operation {
+            Operation::IpNameLookup(_) => Ok(Decision::Abstained),
+            Operation::TcpSocket(tcp_socket_operation) => match tcp_socket_operation {
+                TcpSocketOperation::Create(_) => Ok(Decision::Abstained),
+                TcpSocketOperation::Bind(_) => Ok(Decision::Abstained),
+                TcpSocketOperation::Connect((_, tcp_socket_connect_args)) => {
+                    known_address(tcp_socket_connect_args.remote_address)
+                }
+                TcpSocketOperation::Listen(_) => Ok(Decision::Abstained),
+                TcpSocketOperation::ListenConnection(_) => Ok(Decision::Abstained),
+                TcpSocketOperation::Send(_) => Ok(Decision::Abstained),
+                TcpSocketOperation::Receive(_) => Ok(Decision::Abstained),
             },
-        };
-
-        if !matches!(decision, Ok(Decision::Denied(_))) {
-            if let latch::Operation::IpNameLookup(
-                latch::IpNameLookupOperation::ResolveAddressesReturn(
-                    latch::ResolveAddressesReturnsItem { ip_address },
-                ),
-            ) = operation
-            {
-                State::add_known_address(ip_address)
-            }
+            Operation::UdpSocket(udp_socket_operation) => match udp_socket_operation {
+                UdpSocketOperation::Create(_) => Ok(Decision::Abstained),
+                UdpSocketOperation::Bind(_) => Ok(Decision::Abstained),
+                UdpSocketOperation::Connect((_, udp_socket_connect_args)) => {
+                    known_address(udp_socket_connect_args.remote_address)
+                }
+                UdpSocketOperation::Send((_, udp_socket_send_args)) => {
+                    match udp_socket_send_args.remote_address {
+                        Some(remote_address) => known_address(remote_address),
+                        None => Ok(Decision::Abstained),
+                    }
+                }
+                UdpSocketOperation::Receive(_) => Ok(Decision::Abstained),
+            },
         }
+    }
 
-        decision
+    fn observe_decision(final_decision: Decision, operation: Operation) -> Result<(), ErrorCode> {
+        // an address is known once the final decision allows it to be returned to the guest
+        if let (
+            Decision::Abstained,
+            Operation::IpNameLookup(IpNameLookupOperation::ResolveAddressesReturn(
+                ResolveAddressesReturnsItem { ip_address },
+            )),
+        ) = (final_decision, operation)
+        {
+            State::add_known_address(ip_address)
+        }
+        Ok(())
     }
 }
 

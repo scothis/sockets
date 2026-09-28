@@ -1,5 +1,5 @@
 use test_harness::bindings::exports::wasi::sockets::ip_name_lookup::ErrorCode;
-use test_harness::{Harness, HostLatch, LogEntry};
+use test_harness::{Harness, HostLatch, LogEntry, Observation};
 
 #[tokio::test(flavor = "multi_thread")]
 async fn resolve_addresses_abstained() -> wasmtime::Result<()> {
@@ -76,5 +76,33 @@ async fn resolve_addresses_latch_invalid_config() -> wasmtime::Result<()> {
             "Latch error CODE=invalid-config<my-latch> OPERATION=wasi:sockets/ip-name-lookup#resolve-addresses NAME=localhost"
         )]
     );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn resolve_addresses_decisions_are_observed() -> wasmtime::Result<()> {
+    let mut gate = Harness::new("gate-ip-name-lookup").build().await?;
+    let result = gate
+        .run(async |accessor, gate| {
+            let lookup = gate.wasi_sockets_ip_name_lookup();
+            Ok(lookup
+                .call_resolve_addresses(accessor, "localhost".to_string())
+                .await?)
+        })
+        .await?;
+    let addresses = result.expect("resolve addresses");
+    // the lookup and every returned address are observed
+    let observations = gate.recorder().observations();
+    assert_eq!(observations.len(), 1 + addresses.len());
+    assert_eq!(
+        observations[0],
+        Observation {
+            operation: "ip-name-lookup.resolve-addresses".to_string(),
+            denied: false,
+        }
+    );
+    assert!(observations[1..]
+        .iter()
+        .all(|o| o.operation == "ip-name-lookup.resolve-addresses.return" && !o.denied));
     Ok(())
 }

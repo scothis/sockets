@@ -1,9 +1,10 @@
 package componentized:sockets;
 
-// egress wraps ingress, see the README for why the order matters
+let egress = new local:latch-cidr-egress { ... };
 let ingress = new local:latch-cidr-ingress { ... };
 
-export new local:latch-cidr-egress {
-    latch: ingress.latch,
+export new local:latch-n2 {
+    latch0: egress.latch,
+    latch1: ingress.latch,
     ...
 }...;

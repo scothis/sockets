@@ -8,6 +8,11 @@ impl Latch for DenyAllLatch {
     fn authorize(_: Operation) -> Result<Decision, ErrorCode> {
         Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
     }
+
+    fn observe_decision(_final_decision: Decision, _operation: Operation) -> Result<(), ErrorCode> {
+        // no side effects
+        Ok(())
+    }
 }
 
 wit_bindgen::generate!({

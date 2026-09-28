@@ -38,6 +38,6 @@ Inbound traffic is checked where it originates:
 
 All other operations are abstained. Outbound traffic is not restricted, see `latch-cidr-egress`.
 
-Every operation is first delegated to the nested latch this latch imports. A denial or error from the nested latch is returned as is, the ranges are only consulted for operations the nested latch abstained from. A udp datagram whose send is denied by the nested latch never leaves the guest, so datagrams from its peer are not return traffic. Latches that restrict outbound traffic must be nested under this latch for their decisions to be observed.
+Peers are remembered from the final decision passed to `observe-decision`, not while authorizing. When this latch is aggregated with other latches, a send or connect any of them denies never reaches the peer, so datagrams from that peer are not return traffic. To restrict both directions, see `latch-cidr`.
 
 If the config is invalid (a value that does not parse as a CIDR range or address, or an unknown `default` value), the cause is logged when the config is loaded and every checked operation, including return traffic, fails with an `invalid-config` latch error.

@@ -3,8 +3,8 @@ use wit_bindgen::StreamReader;
 
 use crate::{
     componentized::sockets::latch::{
-        authorize,
-        Decision::{Abstained, Denied},
+        self,
+        Decision::{self, Abstained, Denied},
         ErrorCode as LatchErrorCode, Operation, SocketsErrorCode, TcpSocketOperation,
         UdpSocketOperation,
     },
@@ -17,7 +17,6 @@ use crate::{
         sockets::types,
     },
 };
-
 macro_rules! error {
     ($dst:expr, $($arg:tt)*) => {
         log(Level::Error, "componentized-gate", &format!($dst, $($arg)*));
@@ -34,6 +33,15 @@ macro_rules! warn {
     ($dst:expr) => {
         log(Level::Warn, "componentized-gate", &format!($dst));
     };
+}
+
+/// Authorize the operation with the latch, then report the decision back to the latch. Latches
+/// act on the final decision in `observe-decision`, never while authorizing. Failing to observe
+/// the decision fails the operation, the same as a latch error.
+fn authorize(operation: &Operation) -> Result<Decision, LatchErrorCode> {
+    let decision = latch::authorize(operation)?;
+    latch::observe_decision(&decision, operation)?;
+    Ok(decision)
 }
 
 struct GatedSocketTypes {}
@@ -1121,6 +1129,9 @@ impl From<LatchErrorCode> for ErrorCode {
             LatchErrorCode::InvalidConfig(latch) => {
                 Self::Other(Some(format!("latch-error: invalid-config<{latch}>")))
             }
+            LatchErrorCode::ObservationFailed(latch) => {
+                Self::Other(Some(format!("latch-error: observation-failed<{latch}>")))
+            }
             LatchErrorCode::Other(Some(message)) => {
                 Self::Other(Some(format!("latch-error: {message}")))
             }
@@ -1178,6 +1189,9 @@ impl fmt::Display for DisplayLatchError<'_> {
         match self {
             Self(LatchErrorCode::InvalidConfig(latch)) => {
                 write!(f, "invalid-config<{latch}>")
+            }
+            Self(LatchErrorCode::ObservationFailed(latch)) => {
+                write!(f, "observation-failed<{latch}>")
             }
             Self(LatchErrorCode::Other(Some(message))) => f.write_str(message),
             Self(LatchErrorCode::Other(None)) => f.write_str("other"),

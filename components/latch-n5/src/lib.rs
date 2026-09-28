@@ -17,6 +17,20 @@ impl Latch for LatchN5 {
         ];
         latch_n::authorize(operation, authorizers)
     }
+
+    fn observe_decision(
+        final_decision: Decision,
+        operation: Operation<'_>,
+    ) -> Result<(), ErrorCode> {
+        let observers = vec![
+            latch0::observe_decision,
+            latch1::observe_decision,
+            latch2::observe_decision,
+            latch3::observe_decision,
+            latch4::observe_decision,
+        ];
+        latch_n::observe_decision(final_decision, operation, observers)
+    }
 }
 
 latch_n::export!(LatchN5 with_types_in latch_n::bindings);

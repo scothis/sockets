@@ -13,6 +13,26 @@ pub fn authorize(
     Ok(Decision::Abstained)
 }
 
+/// Pass the final decision to every nested latch, including latches that were not asked to
+/// authorize the operation because an earlier latch denied it.
+///
+/// Every observer is called even if an earlier one fails, the result is the first error.
+pub fn observe_decision(
+    final_decision: Decision,
+    operation: Operation,
+    observers: Vec<fn(&Decision, &Operation<'_>) -> Result<(), ErrorCode>>,
+) -> Result<(), ErrorCode> {
+    let mut result = Ok(());
+    for observe in observers {
+        if let Err(err) = observe(&final_decision, &operation) {
+            if result.is_ok() {
+                result = Err(err);
+            }
+        }
+    }
+    result
+}
+
 pub mod bindings {
     wit_bindgen::generate!({
         path: "../../components/wit",

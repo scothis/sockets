@@ -4,7 +4,6 @@ use std::net::{IpAddr, SocketAddr};
 use heck::ToKebabCase;
 use latch_cidr::{Action, Peers, Ranges, Reason};
 
-use crate::componentized::sockets::latch;
 use crate::exports::componentized::sockets::latch::{
     Decision, ErrorCode, Guest as Latch, Operation, SocketsErrorCode, TcpSocketOperation,
     UdpSocketOperation,
@@ -124,12 +123,6 @@ fn record_udp_peer(
 
 impl Latch for CidrIngressLatch {
     fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
-        // the nested latch decides first, this latch only observes operations it did not deny.
-        // A udp send denied by the nested latch never leaves the guest, so it is not recorded.
-        if let latch::Decision::Denied(error_code) = latch::authorize(&operation)? {
-            return Ok(Decision::Denied(error_code));
-        }
-
         match operation {
             // tcp traffic originates from a peer when it connects to a listening socket, receiving
             // on a connection the guest opened is return traffic
@@ -147,6 +140,17 @@ impl Latch for CidrIngressLatch {
                 );
                 authorize(Ok(remote_address), established)
             }
+            _ => Ok(Decision::Abstained),
+        }
+    }
+
+    fn observe_decision(final_decision: Decision, operation: Operation) -> Result<(), ErrorCode> {
+        // only a send or connect the final decision allows reaches the peer, a denial from any
+        // latch means datagrams from the peer are not return traffic
+        let Decision::Abstained = final_decision else {
+            return Ok(());
+        };
+        match operation {
             Operation::UdpSocket(UdpSocketOperation::Send((udp_socket, udp_socket_send_args))) => {
                 // a connected socket sends to its remote address
                 let remote_address = match udp_socket_send_args.remote_address {
@@ -156,7 +160,6 @@ impl Latch for CidrIngressLatch {
                 if let Ok(remote_address) = remote_address {
                     record_udp_peer(udp_socket.get_local_address(), remote_address);
                 }
-                Ok(Decision::Abstained)
             }
             Operation::UdpSocket(UdpSocketOperation::Connect((
                 udp_socket,
@@ -166,10 +169,10 @@ impl Latch for CidrIngressLatch {
                     udp_socket.get_local_address(),
                     udp_socket_connect_args.remote_address,
                 );
-                Ok(Decision::Abstained)
             }
-            _ => Ok(Decision::Abstained),
+            _ => {}
         }
+        Ok(())
     }
 }
 

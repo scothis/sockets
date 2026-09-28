@@ -12,6 +12,7 @@ use test_harness::bindings::exports::wasi::sockets::ip_name_lookup::ErrorCode as
 use test_harness::bindings::wasi::sockets::types::IpAddress;
 use test_harness::{
     ip_socket_address, loopback, ErrorCode, Harness, HostLatch, IpAddressFamily, LogEntry,
+    Observation,
 };
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::time::timeout;
@@ -33,7 +34,12 @@ async fn tcp_connect_denied_without_lookup() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
-    let mut gate = Harness::new("gate").latch(LATCH).build().await?;
+    // aggregated with the host latch, which abstains from everything
+    let mut gate = Harness::new("gate")
+        .latch(LATCH)
+        .host_latch(HostLatch::abstain())
+        .build()
+        .await?;
     let result = gate
         .run(async |accessor, gate| {
             let tcp = gate.wasi_sockets_types().tcp_socket();
@@ -51,10 +57,21 @@ async fn tcp_connect_denied_without_lookup() -> wasmtime::Result<()> {
             .is_err(),
         "no connection should reach the listener"
     );
-    // every operation is delegated to the nested latch before this latch decides
+    // latch-n stops at the first denial, the host latch is not asked about the connect but
+    // observes the final decision
+    assert_eq!(gate.recorder().operations(), vec!["tcp-socket.create"]);
     assert_eq!(
-        gate.recorder().operations(),
-        vec!["tcp-socket.create", "tcp-socket.connect"]
+        gate.recorder().observations(),
+        vec![
+            Observation {
+                operation: "tcp-socket.create".to_string(),
+                denied: false,
+            },
+            Observation {
+                operation: "tcp-socket.connect".to_string(),
+                denied: true,
+            },
+        ]
     );
     assert_eq!(
         gate.recorder().logs(),
@@ -106,7 +123,7 @@ async fn tcp_connect_denied_to_address_filtered_from_lookup() -> wasmtime::Resul
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
-    // the nested latch removes the IPv4 addresses from the lookup, so they are never granted
+    // the aggregated latch removes the IPv4 addresses from the lookup, so they are never granted
     let mut gate = Harness::new("gate")
         .latch(LATCH)
         .host_latch(HostLatch::new(|auth| {
@@ -144,11 +161,11 @@ async fn tcp_connect_denied_to_address_filtered_from_lookup() -> wasmtime::Resul
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn nested_latch_denial_passes_through() -> wasmtime::Result<()> {
+async fn aggregated_latch_denial_passes_through() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
-    // a distinct reason shows the nested latch's decision is returned, even for a granted address
+    // a distinct reason shows the aggregated latch's decision is returned, even for a granted address
     let mut gate = Harness::new("gate")
         .latch(LATCH)
         .host_latch(HostLatch::new(|auth| {
@@ -179,7 +196,7 @@ async fn nested_latch_denial_passes_through() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn nested_latch_error_passes_through() -> wasmtime::Result<()> {
+async fn aggregated_latch_error_passes_through() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate")
         .latch(LATCH)
         .host_latch(HostLatch::new(|auth| {
@@ -206,7 +223,7 @@ async fn nested_latch_error_passes_through() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn lookup_decided_by_nested_latch_component() -> wasmtime::Result<()> {
+async fn lookup_decided_by_aggregated_latch_component() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
@@ -244,7 +261,8 @@ async fn lookup_decided_by_nested_latch_component() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn tcp_connect_denied_when_lookup_denied_by_nested_latch_component() -> wasmtime::Result<()> {
+async fn tcp_connect_denied_when_lookup_denied_by_aggregated_latch_component(
+) -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 

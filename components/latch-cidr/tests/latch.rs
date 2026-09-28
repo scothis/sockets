@@ -183,3 +183,50 @@ async fn invalid_config() -> wasmtime::Result<()> {
     );
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn denied_send_does_not_open_ingress() -> wasmtime::Result<()> {
+    let peer = UdpSocket::bind("127.0.0.1:0").await?;
+    let peer_address = ip_socket_address(peer.local_addr()?);
+
+    let mut gate = Harness::new("gate-types")
+        .latch(LATCH)
+        .config("default", "deny")
+        .build()
+        .await?;
+    let (first, received, second) = gate
+        .run(async |accessor, gate| {
+            let udp = gate.wasi_sockets_types().udp_socket();
+            let socket = udp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            udp.call_bind(accessor, socket, loopback(0))
+                .await?
+                .expect("bind");
+            let local_address = udp
+                .call_get_local_address(accessor, socket)
+                .await?
+                .expect("local address");
+
+            // egress denies the send, ingress observes the denial and does not remember the peer
+            let first = udp
+                .call_send(accessor, socket, b"ping".to_vec(), Some(peer_address))
+                .await?;
+            peer.send_to(b"pong", socket_addr(local_address)).await?;
+            let received = timeout(
+                Duration::from_millis(500),
+                udp.call_receive(accessor, socket),
+            )
+            .await;
+            let second = udp
+                .call_send(accessor, socket, b"ping".to_vec(), Some(peer_address))
+                .await?;
+            Ok((first, received.is_err(), second))
+        })
+        .await?;
+    assert!(matches!(first, Err(ErrorCode::AccessDenied)));
+    assert!(received, "the peer's datagram should not reach the guest");
+    assert!(matches!(second, Err(ErrorCode::AccessDenied)));
+    Ok(())
+}

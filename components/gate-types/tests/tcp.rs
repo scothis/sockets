@@ -5,7 +5,7 @@ use test_harness::bindings::componentized::sockets::latch::{
 };
 use test_harness::{
     collect, ip_socket_address, loopback, resolve, socket_addr, stream, ErrorCode, Harness,
-    HostLatch, IpAddressFamily, LogEntry,
+    HostLatch, IpAddressFamily, LogEntry, Observation,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -591,6 +591,66 @@ async fn receive_denied() -> wasmtime::Result<()> {
                 "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.receive SOCKET={local_address}<->{}",
                 listener.local_addr()?
             )
+        )]
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn decisions_are_observed() -> wasmtime::Result<()> {
+    let mut gate = Harness::new("gate-types")
+        .host_latch(HostLatch::deny(&["tcp-socket.bind"]))
+        .build()
+        .await?;
+    let bound = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            let socket = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            Ok(tcp.call_bind(accessor, socket, loopback(0)).await?)
+        })
+        .await?;
+    assert!(matches!(bound, Err(ErrorCode::AccessDenied)));
+    // both abstained and denied decisions are passed back to the latch
+    assert_eq!(
+        gate.recorder().observations(),
+        vec![
+            Observation {
+                operation: "tcp-socket.create".to_string(),
+                denied: false,
+            },
+            Observation {
+                operation: "tcp-socket.bind".to_string(),
+                denied: true,
+            },
+        ]
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn observe_failure_fails_the_operation() -> wasmtime::Result<()> {
+    let mut gate = Harness::new("gate-types")
+        .host_latch(HostLatch::abstain().fail_observe())
+        .build()
+        .await?;
+    let result = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            Ok(tcp.call_create(accessor, IpAddressFamily::Ipv4).await?)
+        })
+        .await?;
+    // the latch could not act on the decision, so the operation is not allowed
+    assert!(
+        matches!(result, Err(ErrorCode::Other(Some(ref message))) if message == "latch-error: observation-failed<host>")
+    );
+    assert_eq!(
+        gate.recorder().logs(),
+        vec![LogEntry::error(
+            "componentized-gate",
+            "Latch error CODE=observation-failed<host> OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY=IPv4"
         )]
     );
     Ok(())

@@ -206,6 +206,11 @@ impl Latch for GlobIpNameLookupLatch {
             _ => Ok(Decision::Abstained),
         }
     }
+
+    fn observe_decision(_final_decision: Decision, _operation: Operation) -> Result<(), ErrorCode> {
+        // no side effects
+        Ok(())
+    }
 }
 
 fn get_error_code(value: String) -> Option<SocketsErrorCode> {

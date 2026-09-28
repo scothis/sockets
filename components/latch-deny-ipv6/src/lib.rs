@@ -105,6 +105,11 @@ impl Latch for DenyIPv6Latch {
             },
         }
     }
+
+    fn observe_decision(_final_decision: Decision, _operation: Operation) -> Result<(), ErrorCode> {
+        // no side effects
+        Ok(())
+    }
 }
 
 wit_bindgen::generate!({

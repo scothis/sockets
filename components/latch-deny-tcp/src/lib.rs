@@ -12,6 +12,11 @@ impl Latch for DenyTcpLatch {
             Operation::UdpSocket(_) => Ok(Decision::Abstained),
         }
     }
+
+    fn observe_decision(_final_decision: Decision, _operation: Operation) -> Result<(), ErrorCode> {
+        // no side effects
+        Ok(())
+    }
 }
 
 wit_bindgen::generate!({

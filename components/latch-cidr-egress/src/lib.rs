@@ -4,7 +4,6 @@ use std::net::{IpAddr, SocketAddr};
 use heck::ToKebabCase;
 use latch_cidr::{Action, Peers, Ranges, Reason};
 
-use crate::componentized::sockets::latch;
 use crate::exports::componentized::sockets::latch::{
     Decision, ErrorCode, Guest as Latch, Operation, SocketsErrorCode, TcpSocketOperation,
     UdpSocketOperation,
@@ -111,12 +110,6 @@ fn ip_addr(address: IpSocketAddress) -> IpAddr {
 
 impl Latch for CidrEgressLatch {
     fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
-        // the nested latch decides first, this latch only observes operations it did not deny.
-        // A udp receive denied by the nested latch never reaches the guest, so it is not recorded.
-        if let latch::Decision::Denied(error_code) = latch::authorize(&operation)? {
-            return Ok(Decision::Denied(error_code));
-        }
-
         match operation {
             // tcp traffic originates with connect, sends on accepted connections are return traffic
             Operation::TcpSocket(TcpSocketOperation::Connect((_, tcp_socket_connect_args))) => {
@@ -137,21 +130,30 @@ impl Latch for CidrEgressLatch {
                 };
                 authorize(remote_address, established)
             }
+            _ => Ok(Decision::Abstained),
+        }
+    }
+
+    fn observe_decision(final_decision: Decision, operation: Operation) -> Result<(), ErrorCode> {
+        // only a datagram the final decision allows reaches the guest, a denial from any latch
+        // means there is nothing to reply to
+        if let (
+            Decision::Abstained,
             Operation::UdpSocket(UdpSocketOperation::Receive((
                 udp_socket,
                 udp_socket_receive_returns,
-            ))) => {
-                // a socket that received a datagram is bound
-                if let Ok(local_address) = udp_socket.get_local_address() {
-                    STATE.udp_peers.borrow_mut().record(
-                        Some(socket_addr(local_address)),
-                        socket_addr(udp_socket_receive_returns.remote_address),
-                    );
-                }
-                Ok(Decision::Abstained)
+            ))),
+        ) = (final_decision, operation)
+        {
+            // a socket that received a datagram is bound
+            if let Ok(local_address) = udp_socket.get_local_address() {
+                STATE.udp_peers.borrow_mut().record(
+                    Some(socket_addr(local_address)),
+                    socket_addr(udp_socket_receive_returns.remote_address),
+                );
             }
-            _ => Ok(Decision::Abstained),
         }
+        Ok(())
     }
 }
 

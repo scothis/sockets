@@ -3,9 +3,9 @@
 //! A [`Harness`] instantiates a component (`lib/*.wasm`) with real
 //! upstream sockets from wasmtime-wasi, a scripted [`HostLatch`], and captured
 //! `wasi:logging` output. Latch components from `lib/` can be installed in
-//! front of the host latch, they are composed into the component before it is
-//! instantiated. Values for `wasi:config/store` are shared by every component
-//! in the composition.
+//! place of, or alongside, the host latch, they are composed into the component
+//! before it is instantiated. Values for `wasi:config/store` are shared by every
+//! component in the composition.
 
 use std::collections::HashSet;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
@@ -284,10 +284,11 @@ type Policy = dyn FnMut(&Authorization) -> Result<Decision, LatchErrorCode> + Se
 
 /// Scripted latch implemented by the host.
 ///
-/// It is the terminal latch, installed latch components that delegate to
-/// their upstream latch will reach it.
+/// It is the test subject's latch unless latch components are installed, see
+/// [`Harness::latch`].
 pub struct HostLatch {
     policy: Box<Policy>,
+    fail_observe: bool,
 }
 
 impl HostLatch {
@@ -326,14 +327,31 @@ impl HostLatch {
     ) -> Self {
         Self {
             policy: Box::new(policy),
+            fail_observe: false,
         }
     }
+
+    /// Fail every `observe-decision` call.
+    pub fn fail_observe(mut self) -> Self {
+        self.fail_observe = true;
+        self
+    }
+}
+
+/// A decision the host latch was told about with `observe-decision`.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct Observation {
+    /// Operation name, e.g. `tcp-socket.bind`
+    pub operation: String,
+    /// Whether the final decision denied the operation
+    pub denied: bool,
 }
 
 /// Observations recorded while the test subject runs.
 #[derive(Clone, Default)]
 pub struct Recorder {
     authorizations: Arc<Mutex<Vec<Authorization>>>,
+    observations: Arc<Mutex<Vec<Observation>>>,
     logs: Arc<Mutex<Vec<LogEntry>>>,
 }
 
@@ -349,6 +367,11 @@ impl Recorder {
             .into_iter()
             .map(|a| a.operation)
             .collect()
+    }
+
+    /// Decisions the host latch observed, in order.
+    pub fn observations(&self) -> Vec<Observation> {
+        self.observations.lock().unwrap().clone()
     }
 
     /// Messages logged by the test subject, in order.
@@ -384,6 +407,47 @@ impl latch::Host for Ctx {
             .push(authorization.clone());
         (self.latch.policy)(&authorization)
     }
+
+    fn observe_decision(
+        &mut self,
+        decision: Decision,
+        operation: Operation,
+    ) -> Result<(), LatchErrorCode> {
+        self.recorder
+            .observations
+            .lock()
+            .unwrap()
+            .push(Observation {
+                operation: describe(&operation).operation,
+                denied: matches!(decision, Decision::Denied(_)),
+            });
+        match self.latch.fail_observe {
+            true => Err(LatchErrorCode::ObservationFailed("host".to_string())),
+            false => Ok(()),
+        }
+    }
+}
+
+/// Define the host latch under a named import, e.g. `latch1` of a `latch-n` component.
+fn add_named_latch_to_linker(linker: &mut Linker<Ctx>, name: &str) -> Result<()> {
+    let mut instance = linker.instance(name)?;
+    instance.func_wrap(
+        "authorize",
+        |mut store: StoreContextMut<'_, Ctx>, (operation,): (Operation,)| {
+            Ok((latch::Host::authorize(store.data_mut(), operation),))
+        },
+    )?;
+    instance.func_wrap(
+        "observe-decision",
+        |mut store: StoreContextMut<'_, Ctx>, (decision, operation): (Decision, Operation)| {
+            Ok((latch::Host::observe_decision(
+                store.data_mut(),
+                decision,
+                operation,
+            ),))
+        },
+    )?;
+    Ok(())
 }
 
 impl store::Host for Ctx {
@@ -451,7 +515,7 @@ fn describe(operation: &Operation) -> Authorization {
 pub struct Harness {
     subject: String,
     latches: Vec<String>,
-    host_latch: HostLatch,
+    host_latch: Option<HostLatch>,
     config: Vec<(String, String)>,
 }
 
@@ -461,24 +525,25 @@ impl Harness {
         Self {
             subject: component_name.to_string(),
             latches: vec![],
-            host_latch: HostLatch::abstain(),
+            host_latch: None,
             config: vec![],
         }
     }
 
-    /// Install a latch component from `lib/` in front of the host latch.
+    /// Install a latch component from `lib/`.
     ///
-    /// Latches are chained in the order installed, the first latch is
-    /// consulted by the test subject directly. A latch that delegates to its upstream
-    /// latch reaches the next installed latch, and finally the host latch.
+    /// Without latch components the host latch is the test subject's latch. A single latch
+    /// component replaces it. Several latches, including the host latch when one is set with
+    /// [`Harness::host_latch`], are aggregated with the `latch-n` component of the same size,
+    /// in the order installed with the host latch last.
     pub fn latch(mut self, name: &str) -> Self {
         self.latches.push(name.to_string());
         self
     }
 
-    /// Replace the default abstaining host latch.
+    /// Replace the default abstaining host latch, it is aggregated with any latch components.
     pub fn host_latch(mut self, latch: HostLatch) -> Self {
-        self.host_latch = latch;
+        self.host_latch = Some(latch);
         self
     }
 
@@ -495,6 +560,7 @@ impl Harness {
         let mut config = Config::new();
         config.wasm_component_model_async(true);
         config.wasm_component_model_threading(true);
+        config.wasm_component_model_implements(true);
         let engine = Engine::new(&config)?;
 
         let bytes = self.compose()?;
@@ -503,6 +569,9 @@ impl Harness {
         let mut linker = Linker::new(&engine);
         wasmtime_wasi::p3::add_to_linker(&mut linker)?;
         latch::add_to_linker::<_, HasSelf<Ctx>>(&mut linker, |ctx| ctx)?;
+        for slot in 0..LATCH_N_MAX {
+            add_named_latch_to_linker(&mut linker, &format!("latch{slot}"))?;
+        }
         store::add_to_linker::<_, HasSelf<Ctx>>(&mut linker, |ctx| ctx)?;
         logging::add_to_linker::<_, HasSelf<Ctx>>(&mut linker, |ctx| ctx)?;
 
@@ -519,7 +588,7 @@ impl Harness {
             Ctx {
                 wasi,
                 table: ResourceTable::new(),
-                latch: self.host_latch,
+                latch: self.host_latch.unwrap_or_else(HostLatch::abstain),
                 config: self.config,
                 recorder: recorder.clone(),
             },
@@ -549,8 +618,17 @@ impl Harness {
     }
 
     fn compose(&self) -> Result<Vec<u8>> {
+        // the host latch takes the last slot of latch-n, left unsatisfied it is imported
+        let slots = self.latches.len() + usize::from(self.host_latch.is_some());
+        let latch_n = format!("latch-n{slots}");
         let mut names = vec![self.subject.as_str()];
         names.extend(self.latches.iter().map(String::as_str));
+        if self.latches.len() > 1 || (self.latches.len() == 1 && self.host_latch.is_some()) {
+            if slots > LATCH_N_MAX {
+                bail!("at most {LATCH_N_MAX} latches can be aggregated, got {slots}");
+            }
+            names.push(&latch_n);
+        }
         ensure_built(&names)?;
 
         let read = |name: &str| {
@@ -558,23 +636,47 @@ impl Harness {
             std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))
         };
 
-        let mut bytes = read(&self.subject)?;
-        if self.latches.is_empty() {
-            return Ok(bytes);
-        }
-
-        // plug the latches into each other from the host side outward, then into the test subject
-        let mut upstream: Option<Vec<u8>> = None;
-        for name in self.latches.iter().rev() {
-            let latch = read(name)?;
-            upstream = Some(match upstream {
-                Some(upstream) => plug(name, latch, upstream)?,
-                None => latch,
-            });
-        }
-        bytes = plug(&self.subject, bytes, upstream.unwrap())?;
-        Ok(bytes)
+        let bytes = read(&self.subject)?;
+        let latch = match self.latches.as_slice() {
+            [] => return Ok(bytes),
+            [latch] if self.host_latch.is_none() => read(latch)?,
+            latches => {
+                let latches = latches
+                    .iter()
+                    .map(|name| read(name))
+                    .collect::<Result<Vec<_>>>()?;
+                aggregate(read(&latch_n)?, latches)?
+            }
+        };
+        plug(&self.subject, bytes, latch)
     }
+}
+
+/// The most latches a `latch-n` component aggregates.
+const LATCH_N_MAX: usize = 5;
+
+const LATCH_INTERFACE: &str = "componentized:sockets/latch@0.0.0-dev";
+
+/// Satisfy the leading `latch{i}` imports of a `latch-n` component with the latches, any
+/// remaining slot is left for the host.
+fn aggregate(latch_n: Vec<u8>, latches: Vec<Vec<u8>>) -> Result<Vec<u8>> {
+    let mut graph = CompositionGraph::new();
+    let latch_n = Package::from_bytes("test:latch-n", None, latch_n, graph.types_mut())
+        .map_err(|err| format_err!("{err:#}"))?;
+    let latch_n = graph.register_package(latch_n)?;
+    let latch_n = graph.instantiate(latch_n);
+    for (slot, latch) in latches.into_iter().enumerate() {
+        let latch =
+            Package::from_bytes(&format!("test:latch{slot}"), None, latch, graph.types_mut())
+                .map_err(|err| format_err!("{err:#}"))?;
+        let latch = graph.register_package(latch)?;
+        let latch = graph.instantiate(latch);
+        let export = graph.alias_instance_export(latch, LATCH_INTERFACE)?;
+        graph.set_instantiation_argument(latch_n, &format!("latch{slot}"), export)?;
+    }
+    let export = graph.alias_instance_export(latch_n, LATCH_INTERFACE)?;
+    graph.export(export, LATCH_INTERFACE)?;
+    Ok(graph.encode(EncodeOptions::default())?)
 }
 
 /// Satisfy the socket's imports with the plug's exports.
