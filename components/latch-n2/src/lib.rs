@@ -1,8 +1,7 @@
-use latch_n::bindings::componentized::sockets::latch as latch0;
 use latch_n::bindings::exports::componentized::sockets::latch::{
     Decision, ErrorCode, Guest as Latch, Operation,
 };
-use latch_n::bindings::latch1;
+use latch_n::bindings::{latch0, latch1};
 
 struct LatchN2 {}
 

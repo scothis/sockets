@@ -25,7 +25,7 @@ world sockets-latch {
 
 world sockets-latch-n {
     export componentized:sockets/latch@0.0.0-dev;
-    import componentized:sockets/latch@0.0.0-dev;
+    import latch0: componentized:sockets/latch@0.0.0-dev;
     import latch1: componentized:sockets/latch@0.0.0-dev;
     import latch2: componentized:sockets/latch@0.0.0-dev;
     import latch3: componentized:sockets/latch@0.0.0-dev;
