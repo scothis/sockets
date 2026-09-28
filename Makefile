@@ -84,6 +84,13 @@ lib/interface.wasm: wit/deps README.md
 .PHONY: wit
 wit: wit/deps components/wit/deps
 
+.PHONY: bump-interface-version ## Bump the interface package version, e.g. INTERFACE_VERSION=0.1.0
+bump-interface-version:
+ifndef INTERFACE_VERSION
+	$(error INTERFACE_VERSION is undefined)
+endif
+	scripts/bump-interface-version.sh $(INTERFACE_VERSION)
+
 wit/deps: wkg.toml $(shell find wit -type f -name "*.wit" -not -path "deps")
 	wkg fetch
 
