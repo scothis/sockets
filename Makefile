@@ -98,7 +98,7 @@ components/wit/deps: wit/deps components/wkg.toml $(shell find components/wit -t
 	( cd components && wkg fetch )
 
 .PHONY: publish ## Publish each component in the lib directory
-publish: $(shell find lib -maxdepth 1 -type f -name "*.wasm" | sed -e 's:^lib/:publish-:g')
+publish: $(shell find lib -maxdepth 1 -type f -name "*.wasm" -not -name "dep-*" -not -name "test-*" | sed -e 's:^lib/:publish-:g')
 
 .PHONY: publish-%
 publish-%:

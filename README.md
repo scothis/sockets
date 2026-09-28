@@ -62,6 +62,7 @@ Restrict which remote addresses traffic can originate from or be sent to, by CID
 - [`latch-cidr-bind`](./components/latch-cidr-bind/): restricts which local addresses and ports sockets are bound to
 - [`latch-cidr-egress`](./components/latch-cidr-egress/): restricts outbound traffic the guest originates
 - [`latch-cidr-ingress`](./components/latch-cidr-ingress/): restricts inbound traffic remote peers originate
+- [`latch-deny-private-networks-cidr-config`](./components/latch-deny-private-networks-cidr-config/): config for `latch-cidr-egress` denying outbound traffic to private, loopback, link local and other addresses that are not globally reachable, a baseline against server side request forgery that can be refined before use
 
 #### Combining latches
 

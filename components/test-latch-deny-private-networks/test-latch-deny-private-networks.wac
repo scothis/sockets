@@ -1,0 +1,6 @@
+package componentized:sockets;
+
+export new local:latch-cidr-egress {
+    store: new local:latch-deny-private-networks-cidr-config {}.store,
+    ...
+}...;
