@@ -65,10 +65,11 @@ Restrict which remote addresses traffic can originate from or be sent to, by CID
 
 #### Combining latches
 
-Build a policy from several latches, or apply a latch to only part of the traffic, for example to configure tcp and udp differently.
+Build a policy from several latches, apply a latch to only part of the traffic, for example to configure tcp and udp differently, or try a policy before enforcing it.
 
 - [`latch-n2`](./components/latch-n2/), [`latch-n3`](./components/latch-n3/), [`latch-n4`](./components/latch-n4/), [`latch-n5`](./components/latch-n5/): aggregate two to five latches, any latch can deny an operation
 - [`latch-delegate-tcp`](./components/latch-delegate-tcp/) / [`latch-delegate-udp`](./components/latch-delegate-udp/): apply a wrapped latch to only tcp or only udp operations
+- [`latch-dry-run`](./components/latch-dry-run/): log what a wrapped latch would deny without enforcing it, to roll out a policy
 
 ### Tracing
 

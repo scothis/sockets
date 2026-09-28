@@ -1077,6 +1077,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "latch-dry-run"
+version = "0.1.0"
+dependencies = [
+ "test-harness",
+ "tokio",
+ "wasmtime",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "latch-ip-name-lookup-glob"
 version = "0.1.0"
 dependencies = [
