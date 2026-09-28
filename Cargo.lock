@@ -960,6 +960,9 @@ dependencies = [
 name = "latch-deny-connect-unless-lookup-address"
 version = "0.1.0"
 dependencies = [
+ "test-harness",
+ "tokio",
+ "wasmtime",
  "wit-bindgen",
 ]
 

@@ -10,14 +10,14 @@ use crate::exports::componentized::sockets::latch::{
 };
 
 struct State {
-    granted_addresses: RefCell<BTreeSet<IpAddr>>,
+    known_addresses: RefCell<BTreeSet<IpAddr>>,
 }
 
 // components are single threaded
 unsafe impl Sync for State {}
 
 impl State {
-    fn is_granted_socket_address(socket_address: IpSocketAddress) -> bool {
+    fn is_known_address(socket_address: IpSocketAddress) -> bool {
         let ip_address = match socket_address {
             IpSocketAddress::Ipv4(ipv4_socket_address) => {
                 IpAddress::Ipv4(ipv4_socket_address.address)
@@ -27,21 +27,21 @@ impl State {
             }
         };
         STATE
-            .granted_addresses
+            .known_addresses
             .borrow()
             .contains(&ip_addr(ip_address))
     }
 
-    fn grant_ip_address(ip_address: IpAddress) {
+    fn add_known_address(ip_address: IpAddress) {
         STATE
-            .granted_addresses
+            .known_addresses
             .borrow_mut()
             .insert(ip_addr(ip_address));
     }
 }
 
 static STATE: State = State {
-    granted_addresses: RefCell::new(BTreeSet::new()),
+    known_addresses: RefCell::new(BTreeSet::new()),
 };
 
 fn ip_addr(ip_address: IpAddress) -> IpAddr {
@@ -53,9 +53,9 @@ fn ip_addr(ip_address: IpAddress) -> IpAddr {
     }
 }
 
-struct ConnectToLookedUpAddressLatch {}
+struct DenyConnectUnlessLookUpAddressLatch {}
 
-impl Latch for ConnectToLookedUpAddressLatch {
+impl Latch for DenyConnectUnlessLookUpAddressLatch {
     fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
         let operation = operation.into();
         let decision = match latch::authorize(&operation)? {
@@ -66,9 +66,7 @@ impl Latch for ConnectToLookedUpAddressLatch {
                     latch::TcpSocketOperation::Create(_) => Ok(Decision::Abstained),
                     latch::TcpSocketOperation::Bind(_) => Ok(Decision::Abstained),
                     latch::TcpSocketOperation::Connect((_, tcp_socket_connect_args)) => {
-                        match State::is_granted_socket_address(
-                            tcp_socket_connect_args.remote_address,
-                        ) {
+                        match State::is_known_address(tcp_socket_connect_args.remote_address) {
                             true => Ok(Decision::Abstained),
                             false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
                         }
@@ -82,21 +80,17 @@ impl Latch for ConnectToLookedUpAddressLatch {
                     latch::UdpSocketOperation::Create(_) => Ok(Decision::Abstained),
                     latch::UdpSocketOperation::Bind(_) => Ok(Decision::Abstained),
                     latch::UdpSocketOperation::Connect((_, udp_socket_connect_args)) => {
-                        match State::is_granted_socket_address(
-                            udp_socket_connect_args.remote_address,
-                        ) {
+                        match State::is_known_address(udp_socket_connect_args.remote_address) {
                             true => Ok(Decision::Abstained),
                             false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
                         }
                     }
                     latch::UdpSocketOperation::Send((_, udp_socket_send_args)) => {
                         match udp_socket_send_args.remote_address {
-                            Some(remote_address) => {
-                                match State::is_granted_socket_address(remote_address) {
-                                    true => Ok(Decision::Abstained),
-                                    false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
-                                }
-                            }
+                            Some(remote_address) => match State::is_known_address(remote_address) {
+                                true => Ok(Decision::Abstained),
+                                false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
+                            },
                             None => Ok(Decision::Abstained),
                         }
                     }
@@ -112,7 +106,7 @@ impl Latch for ConnectToLookedUpAddressLatch {
                 ),
             ) = operation
             {
-                State::grant_ip_address(ip_address)
+                State::add_known_address(ip_address)
             }
         }
 
@@ -127,4 +121,4 @@ wit_bindgen::generate!({
     generate_all
 });
 
-export!(ConnectToLookedUpAddressLatch);
+export!(DenyConnectUnlessLookUpAddressLatch);
