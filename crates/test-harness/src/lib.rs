@@ -41,7 +41,7 @@ pub mod bindings {
             package componentized:test-harness;
 
             world harness {
-                import componentized:sockets/latch@0.0.0-dev;
+                import componentized:sockets/latch@0.1.0-dev;
                 import wasi:config/store@0.2.0-rc.1;
                 import wasi:logging/logging@0.1.0-draft;
                 export wasi:sockets/types@0.3.0;
@@ -655,7 +655,7 @@ impl Harness {
 /// The most latches a `latch-n` component aggregates.
 const LATCH_N_MAX: usize = 5;
 
-const LATCH_INTERFACE: &str = "componentized:sockets/latch@0.0.0-dev";
+const LATCH_INTERFACE: &str = "componentized:sockets/latch@0.1.0-dev";
 
 /// Satisfy the leading `latch{i}` imports of a `latch-n` component with the latches, any
 /// remaining slot is left for the host.
