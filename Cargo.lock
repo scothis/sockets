@@ -982,6 +982,26 @@ dependencies = [
 ]
 
 [[package]]
+name = "latch-delegate-tcp"
+version = "0.1.0"
+dependencies = [
+ "test-harness",
+ "tokio",
+ "wasmtime",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "latch-delegate-udp"
+version = "0.1.0"
+dependencies = [
+ "test-harness",
+ "tokio",
+ "wasmtime",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "latch-deny-all"
 version = "0.1.0"
 dependencies = [

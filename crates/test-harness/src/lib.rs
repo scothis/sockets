@@ -17,7 +17,10 @@ use std::task::Poll;
 
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
-use wac_graph::{types::Package, CompositionGraph, EncodeOptions};
+use wac_graph::{
+    types::{Package, Types},
+    CompositionGraph, EncodeOptions,
+};
 use wasmtime::component::{
     Accessor, Component, FutureConsumer, FutureReader, HasSelf, Lift, Linker, Lower, ResourceTable,
     Source, StreamConsumer, StreamReader, StreamResult,
@@ -533,7 +536,8 @@ impl Harness {
     /// Install a latch component from `lib/`.
     ///
     /// Without latch components the host latch is the test subject's latch. A single latch
-    /// component replaces it. Several latches, including the host latch when one is set with
+    /// component replaces it, unless the latch imports a latch, then it wraps the host latch.
+    /// Otherwise several latches, including the host latch when one is set with
     /// [`Harness::host_latch`], are aggregated with the `latch-n` component of the same size,
     /// in the order installed with the host latch last.
     pub fn latch(mut self, name: &str) -> Self {
@@ -618,17 +622,8 @@ impl Harness {
     }
 
     fn compose(&self) -> Result<Vec<u8>> {
-        // the host latch takes the last slot of latch-n, left unsatisfied it is imported
-        let slots = self.latches.len() + usize::from(self.host_latch.is_some());
-        let latch_n = format!("latch-n{slots}");
         let mut names = vec![self.subject.as_str()];
         names.extend(self.latches.iter().map(String::as_str));
-        if self.latches.len() > 1 || (self.latches.len() == 1 && self.host_latch.is_some()) {
-            if slots > LATCH_N_MAX {
-                bail!("at most {LATCH_N_MAX} latches can be aggregated, got {slots}");
-            }
-            names.push(&latch_n);
-        }
         ensure_built(&names)?;
 
         let read = |name: &str| {
@@ -639,8 +634,16 @@ impl Harness {
         let bytes = read(&self.subject)?;
         let latch = match self.latches.as_slice() {
             [] => return Ok(bytes),
-            [latch] if self.host_latch.is_none() => read(latch)?,
+            // a latch that wraps another latch wraps the host latch, its import is left for the host
+            [latch] if self.host_latch.is_none() || imports_latch(&read(latch)?)? => read(latch)?,
             latches => {
+                // the host latch takes the last slot of latch-n, left unsatisfied it is imported
+                let slots = latches.len() + usize::from(self.host_latch.is_some());
+                if slots > LATCH_N_MAX {
+                    bail!("at most {LATCH_N_MAX} latches can be aggregated, got {slots}");
+                }
+                let latch_n = format!("latch-n{slots}");
+                ensure_built(&[&latch_n])?;
                 let latches = latches
                     .iter()
                     .map(|name| read(name))
@@ -656,6 +659,14 @@ impl Harness {
 const LATCH_N_MAX: usize = 5;
 
 const LATCH_INTERFACE: &str = "componentized:sockets/latch@0.1.0-dev";
+
+/// Whether the latch component imports a latch, which it wraps.
+fn imports_latch(latch: &[u8]) -> Result<bool> {
+    let mut types = Types::default();
+    let package = Package::from_bytes("test:latch", None, latch.to_vec(), &mut types)
+        .map_err(|err| format_err!("{err:#}"))?;
+    Ok(types[package.ty()].imports.contains_key(LATCH_INTERFACE))
+}
 
 /// Satisfy the leading `latch{i}` imports of a `latch-n` component with the latches, any
 /// remaining slot is left for the host.

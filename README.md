@@ -21,6 +21,8 @@ A collection of utility components that remix wasi:socket types and interfaces.
 - [`latch-cidr`](./components/latch-cidr/)
 - [`latch-cidr-egress`](./components/latch-cidr-egress/)
 - [`latch-cidr-ingress`](./components/latch-cidr-ingress/)
+- [`latch-delegate-tcp`](./components/latch-delegate-tcp/)
+- [`latch-delegate-udp`](./components/latch-delegate-udp/)
 - [`latch-deny-all`](./components/latch-deny-all/)
 - [`latch-deny-bind`](./components/latch-deny-bind/)
 - [`latch-deny-connect`](./components/latch-deny-connect/)
@@ -44,6 +46,7 @@ A collection of utility components that remix wasi:socket types and interfaces.
 
 Prereqs:
 - a rust toolchain
+- [`static-config`](https://github.com/componentized/static-config)
 - [`wasm-tools`](https://github.com/bytecodealliance/wasm-tools)
 - [`wac`](https://github.com/bytecodealliance/wac)
 - [`wkg`](https://github.com/bytecodealliance/wasm-pkg-tools)
