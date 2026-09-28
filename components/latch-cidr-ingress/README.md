@@ -41,3 +41,15 @@ All other operations are abstained. Outbound traffic is not restricted, see `lat
 Peers are remembered from the final decision passed to `observe-decision`, not while authorizing. When this latch is aggregated with other latches, a send or connect any of them denies never reaches the peer, so datagrams from that peer are not return traffic. To restrict both directions, see `latch-cidr`.
 
 If the config is invalid (a value that does not parse as a CIDR range or address, or an unknown `default` value), the cause is logged when the config is loaded and every checked operation, including return traffic, fails with an `invalid-config` latch error.
+
+## Interfaces
+
+Imports:
+
+- `wasi:logging/logging@0.1.0-draft`: logs an invalid config
+- `wasi:config/store@0.2.0-rc.1`: the CIDR ranges
+- `wasi:sockets/types@0.3.0`: the socket types of the operations being authorized
+
+Exports:
+
+- `componentized:sockets/latch@0.1.0-dev`: the latch

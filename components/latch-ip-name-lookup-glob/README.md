@@ -50,3 +50,15 @@ wikipedia.org -> DENIED (invalid-argument)
 If the config is invalid (a pattern that does not parse as a glob, or an unknown `default` value), the cause is logged when the config is loaded and every lookup fails with an `invalid-config` latch error.
 
 DNS search paths are not known to the gate/latch. The raw DNS name passed from the caller is evaluated. Using fully qualified DNS names will avoid any ambiguity.
+
+## Interfaces
+
+Imports:
+
+- `wasi:logging/logging@0.1.0-draft`: logs an invalid config
+- `wasi:config/store@0.2.0-rc.1`: the glob patterns
+- `wasi:sockets/types@0.3.0`: the socket types of the operations being authorized
+
+Exports:
+
+- `componentized:sockets/latch@0.1.0-dev`: the latch

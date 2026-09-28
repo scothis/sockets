@@ -15,3 +15,15 @@ connection from 10.1.2.3 -> DENIED
 ```
 
 Both latches remember udp peers from the final decision passed to `observe-decision`, so a peer is only remembered when neither direction denied the traffic.
+
+## Interfaces
+
+Imports:
+
+- `wasi:logging/logging@0.1.0-draft`: logs an invalid config
+- `wasi:config/store@0.2.0-rc.1`: the CIDR ranges, shared by both directions
+- `wasi:sockets/types@0.3.0`: the socket types of the operations being authorized
+
+Exports:
+
+- `componentized:sockets/latch@0.1.0-dev`: the latch
