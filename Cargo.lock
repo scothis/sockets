@@ -949,6 +949,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "latch-cidr-bind"
+version = "0.1.0"
+dependencies = [
+ "latch-cidr",
+ "test-harness",
+ "tokio",
+ "wasmtime",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "latch-cidr-egress"
 version = "0.1.0"
 dependencies = [
