@@ -983,6 +983,20 @@ dependencies = [
 ]
 
 [[package]]
+name = "latch-deny-tcp"
+version = "0.1.0"
+dependencies = [
+ "wit-bindgen",
+]
+
+[[package]]
+name = "latch-deny-udp"
+version = "0.1.0"
+dependencies = [
+ "wit-bindgen",
+]
+
+[[package]]
 name = "latch-ip-name-lookup-glob"
 version = "0.1.0"
 dependencies = [

@@ -1,0 +1,6 @@
+package componentized:sockets;
+
+export new local:latch-ip-name-lookup-glob{ 
+    store: new local:latch-deny-ip-name-lookup-config{}.store,
+    ...
+}...;
