@@ -15,14 +15,18 @@ A collection of utility components that remix wasi:socket types and interfaces.
 ## Components
 
 - [`gate`](./components/gate/)
-- [`gate-ip-name-lookp`](./components/gate-ip-name-lookp/)
+- [`gate-ip-name-lookup`](./components/gate-ip-name-lookup/)
 - [`gate-types`](./components/gate-types/)
 - [`latch-abstain-all`](./components/latch-abstain-all/)
+- [`latch-cidr`](./components/latch-cidr/)
+- [`latch-cidr-egress`](./components/latch-cidr-egress/)
+- [`latch-cidr-ingress`](./components/latch-cidr-ingress/)
 - [`latch-deny-all`](./components/latch-deny-all/)
 - [`latch-deny-bind`](./components/latch-deny-bind/)
 - [`latch-deny-connect`](./components/latch-deny-connect/)
 - [`latch-deny-connect-unless-lookup-address`](./components/latch-deny-connect-unless-lookup-address/)
 - [`latch-deny-ip-name-lookup`](./components/latch-deny-ip-name-lookup/)
+- [`latch-deny-ip-name-lookup-config`](./components/latch-deny-ip-name-lookup-config/)
 - [`latch-deny-ipv4`](./components/latch-deny-ipv4/)
 - [`latch-deny-ipv6`](./components/latch-deny-ipv6/)
 - [`latch-deny-tcp`](./components/latch-deny-tcp/)
@@ -33,7 +37,7 @@ A collection of utility components that remix wasi:socket types and interfaces.
 - [`latch-n4`](./components/latch-n4/)
 - [`latch-n5`](./components/latch-n5/)
 - [`trace`](./components/trace/)
-- [`trace-ip-name-lookp`](./components/trace-ip-name-lookp/)
+- [`trace-ip-name-lookup`](./components/trace-ip-name-lookup/)
 - [`trace-types`](./components/trace-types/)
 
 ## Build

@@ -1,0 +1,13 @@
+[package]
+name = "gate-tests"
+version = "0.1.0"
+edition = "2021"
+license = "Apache-2.0"
+publish = false
+
+# only tests, the component is built from gate.wac
+
+[dev-dependencies]
+test-harness = { workspace = true }
+tokio = { workspace = true }
+wasmtime = { workspace = true }

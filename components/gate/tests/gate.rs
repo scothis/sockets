@@ -1,4 +1,4 @@
-//! Tests for the composed `gate` component, which has no crate of its own. Tests for the
+//! Tests for the `gate` component, composed from `gate.wac`. Tests for the
 //! individual gates live with each gate component.
 
 use test_harness::{Harness, HostLatch, IpAddressFamily};

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use test_harness::bindings::componentized::sockets::latch::{
-    Decision, ErrorCode as LatchErrorCode,
+    Decision, ErrorCode as LatchErrorCode, SocketsErrorCode,
 };
 use test_harness::{
     ip_socket_address, loopback, socket_addr, ErrorCode, Harness, HostLatch, IpAddressFamily,
@@ -295,11 +295,20 @@ async fn receive_abstained() -> wasmtime::Result<()> {
 async fn receive_denied() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
 
+    // deny the first datagram only
+    let mut denied = false;
     let mut gate = Harness::new("gate-types")
-        .host_latch(HostLatch::deny(&["udp-socket.receive"]))
+        .host_latch(HostLatch::new(move |auth| {
+            if auth.operation == "udp-socket.receive" && !denied {
+                denied = true;
+                Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
+            } else {
+                Ok(Decision::Abstained)
+            }
+        }))
         .build()
         .await?;
-    let result = gate
+    let (result, local_address) = gate
         .run(async |accessor, gate| {
             let udp = gate.wasi_sockets_types().udp_socket();
             let socket = udp
@@ -313,14 +322,25 @@ async fn receive_denied() -> wasmtime::Result<()> {
                 .call_get_local_address(accessor, socket)
                 .await?
                 .expect("local address");
-            peer.send_to(b"hello", socket_addr(local_address)).await?;
+            peer.send_to(b"first", socket_addr(local_address)).await?;
+            peer.send_to(b"second", socket_addr(local_address)).await?;
             let result =
                 timeout(Duration::from_secs(5), udp.call_receive(accessor, socket)).await??;
             Ok((result, socket_addr(local_address)))
         })
         .await?;
-    let (result, local_address) = result;
-    assert!(matches!(result, Err(ErrorCode::AccessDenied)));
+    // the denied datagram is dropped, the receive continues with the next one
+    let (data, _) = result.expect("receive");
+    assert_eq!(data, b"second");
+    assert_eq!(
+        gate.recorder().operations(),
+        vec![
+            "udp-socket.create",
+            "udp-socket.bind",
+            "udp-socket.receive",
+            "udp-socket.receive"
+        ]
+    );
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(

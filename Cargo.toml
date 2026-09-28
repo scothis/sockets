@@ -2,12 +2,16 @@
 resolver = "2"
 members = [
     "components/*/src/..",
+    # tests for components built from non-rust sources, like wac compositions
+    "components/*/tests/..",
     "crates/*",
 ]
 
 [workspace.dependencies]
 componentized-rt = { path = "./crates/componentized-rt" }
 heck = "0.5"
+ipnet = "2"
+latch-cidr = { path = "./crates/latch-cidr" }
 latch-n = { path = "./crates/latch-n" }
 test-harness = { path = "./crates/test-harness" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "sync", "time"] }

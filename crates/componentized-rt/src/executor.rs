@@ -11,6 +11,7 @@
 
 use core::cell::RefCell;
 use core::future::{poll_fn, Future};
+use core::pin::pin;
 use core::pin::Pin;
 use core::task::{Poll, Waker};
 
@@ -56,7 +57,16 @@ pub fn spawn(future: impl Future<Output = ()> + 'static) {
 
 /// Hand queued futures to wit-bindgen's local task set, forever.
 async fn run() {
+    // `wit_bindgen::block_on` unwraps its waitable set when the task yields, and the set is only
+    // created once a waitable is registered. Spawning a future wakes the executor, so if every
+    // spawned future completes without registering a waitable the next yield panics. A read
+    // which never completes, the writer is never written or dropped, keeps a waitable registered
+    // from the first poll.
+    let (_writer, mut reader) = wit_bindgen::UnitStreamOps::new();
+    let mut idle = pin!(reader.read(Vec::new()));
+
     poll_fn(|cx| {
+        let _ = idle.as_mut().poll(cx);
         let mut executor = EXECUTOR.0.borrow_mut();
         for future in executor.queue.drain(..) {
             // the future runs until it completes

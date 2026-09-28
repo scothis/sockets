@@ -379,7 +379,27 @@ impl GuestTcpSocket for GatedTcpSocket {
         &self,
         data: wit_bindgen::StreamReader<u8>,
     ) -> wit_bindgen::FutureReader<Result<(), ErrorCode>> {
-        self.socket.send(data)
+        let call_summary = || format!("OPERATION=wasi:sockets/types#tcp-socket.send SOCKET={self}");
+        match authorize(&Operation::TcpSocket(TcpSocketOperation::Send((
+            &self.socket,
+        )))) {
+            Ok(Denied(reason)) => {
+                warn!("Denied REASON={reason} {}", call_summary());
+                // dropping the data stream tells the guest nothing more will be read
+                drop(data);
+                resolved(Err(reason.into()))
+            }
+            Ok(Abstained) => self.socket.send(data),
+            Err(code) => {
+                error!(
+                    "Latch error CODE={code} {summary}",
+                    code = DisplayLatchError(&code),
+                    summary = call_summary()
+                );
+                drop(data);
+                resolved(Err(code.into()))
+            }
+        }
     }
 
     #[doc = "/ Read data from peer."]
@@ -416,7 +436,25 @@ impl GuestTcpSocket for GatedTcpSocket {
         wit_bindgen::StreamReader<u8>,
         wit_bindgen::FutureReader<Result<(), ErrorCode>>,
     ) {
-        self.socket.receive()
+        let call_summary =
+            || format!("OPERATION=wasi:sockets/types#tcp-socket.receive SOCKET={self}");
+        match authorize(&Operation::TcpSocket(TcpSocketOperation::Receive((
+            &self.socket,
+        )))) {
+            Ok(Denied(reason)) => {
+                warn!("Denied REASON={reason} {}", call_summary());
+                (closed_stream(), resolved(Err(reason.into())))
+            }
+            Ok(Abstained) => self.socket.receive(),
+            Err(code) => {
+                error!(
+                    "Latch error CODE={code} {summary}",
+                    code = DisplayLatchError(&code),
+                    summary = call_summary()
+                );
+                (closed_stream(), resolved(Err(code.into())))
+            }
+        }
     }
 
     #[doc = "/ Get the bound local address."]
@@ -918,38 +956,37 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=recv&sektion=2>"]
     #[allow(async_fn_in_trait)]
     async fn receive(&self) -> Result<(Vec<u8>, IpSocketAddress), ErrorCode> {
-        match self.socket.receive().await {
-            Ok((data, remote_address)) => {
-                let call_summary = || {
-                    format!(
-                        "OPERATION=wasi:sockets/types#udp-socket.receive SOCKET={self} DATA-LENGTH={} REMOTE-ADDRESS={}",
-                        data.len(),
-                        remote_address
-                    )
-                };
-                match authorize(&Operation::UdpSocket(UdpSocketOperation::Receive((
-                    &self.socket,
-                    componentized::sockets::latch::UdpSocketReceiveReturns {
-                        data_length: data.len().try_into().expect("data length exceeded 64 bits"),
-                        remote_address,
-                    },
-                )))) {
-                    Ok(Denied(error_code)) => {
-                        warn!("Denied REASON={error_code} {}", call_summary());
-                        Err(error_code.into())
-                    }
-                    Ok(Abstained) => Ok((data, remote_address)),
-                    Err(code) => {
-                        error!(
-                            "Latch error CODE={code} {summary}",
-                            code = DisplayLatchError(&code),
-                            summary = call_summary()
-                        );
-                        Err(code)?
-                    }
+        // a denied datagram is dropped and the next one is received, the same as a denied tcp
+        // connection. Returning an error would let any sender fail the guest's receive.
+        loop {
+            let (data, remote_address) = self.socket.receive().await?;
+            let call_summary = || {
+                format!(
+                    "OPERATION=wasi:sockets/types#udp-socket.receive SOCKET={self} DATA-LENGTH={} REMOTE-ADDRESS={}",
+                    data.len(),
+                    remote_address
+                )
+            };
+            match authorize(&Operation::UdpSocket(UdpSocketOperation::Receive((
+                &self.socket,
+                componentized::sockets::latch::UdpSocketReceiveReturns {
+                    data_length: data.len().try_into().expect("data length exceeded 64 bits"),
+                    remote_address,
+                },
+            )))) {
+                Ok(Denied(error_code)) => {
+                    warn!("Denied REASON={error_code} {}", call_summary());
+                }
+                Ok(Abstained) => return Ok((data, remote_address)),
+                Err(code) => {
+                    error!(
+                        "Latch error CODE={code} {summary}",
+                        code = DisplayLatchError(&code),
+                        summary = call_summary()
+                    );
+                    return Err(code)?;
                 }
             }
-            Err(error_code) => Err(error_code),
         }
     }
 
@@ -1058,6 +1095,24 @@ impl From<SocketsErrorCode> for ErrorCode {
             SocketsErrorCode::Other(message) => Self::Other(message),
         }
     }
+}
+
+/// A future resolved to `result`, for sync exports that return a future and fail before reaching
+/// the socket.
+fn resolved(result: Result<(), ErrorCode>) -> wit_bindgen::FutureReader<Result<(), ErrorCode>> {
+    // the default is only written if the write is cancelled
+    let (tx, rx) = wit_future::new::<Result<(), ErrorCode>>(|| Err(ErrorCode::Other(None)));
+    // the reader has not been returned yet, so the write completes in the background
+    componentized_rt::executor::spawn(async move {
+        let _ = tx.write(result).await;
+    });
+    rx
+}
+
+/// A stream with no data, closed as soon as it is read.
+fn closed_stream() -> wit_bindgen::StreamReader<u8> {
+    let (_, rx) = wit_stream::new::<u8>();
+    rx
 }
 
 impl From<LatchErrorCode> for ErrorCode {

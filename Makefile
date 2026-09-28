@@ -3,11 +3,7 @@ SHELL := /bin/bash
 export RUST_BACKTRACE ?= 1
 export WASMTIME_BACKTRACE_DETAILS ?= 1
 
-CARGO_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/Cargo.toml)))))
-CONFIG_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/*.properties)))))
-WAC_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/*.wac)))))
-WKG_COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard  components/*/*.wkg)))))
-COMPONENTS = $(sort $(CARGO_COMPONENTS) $(CONFIG_COMPONENTS) $(WAC_COMPONENTS) $(WKG_COMPONENTS))
+COMPONENTS = $(sort $(notdir $(patsubst %/,%,$(dir $(wildcard $(addprefix components/*/,*.properties *.wac *.wkg Cargo.toml))))))
 
 .PHONY: all
 all: components
@@ -23,26 +19,14 @@ test: components
 	cargo test --workspace
 
 .PHONY: components
-components: lib/interface.wasm $(foreach component,$(COMPONENTS),lib/$(component).wasm) $(foreach component,$(COMPONENTS),lib/$(component).debug.wasm)
+components: lib/interface.wasm $(foreach component,$(COMPONENTS),lib/$(component).wasm lib/$(component).debug.wasm)
 
 define BUILD_COMPONENT
 
 .PHONY: components/$1
 components/$1: lib/$1.wasm lib/$1.debug.wasm
 
-ifneq ($(filter $1,$(CARGO_COMPONENTS)),)
-
-lib/$1.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f) $(shell find crates -type f)
-	cargo build -p $1 --target wasm32-unknown-unknown --release
-	wasm-tools component new target/wasm32-unknown-unknown/release/$(subst -,_,$1).wasm -o lib/$1.wasm
-	cp components/$1/README.md lib/$1.wasm.md
-
-lib/$1.debug.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f) $(shell find crates -type f)
-	cargo build --target wasm32-unknown-unknown -p $1
-	wasm-tools component new target/wasm32-unknown-unknown/debug/$(subst -,_,$1).wasm -o lib/$1.debug.wasm
-	cp components/$1/README.md lib/$1.debug.wasm.md
-
-else ifneq ($(filter $1,$(CONFIG_COMPONENTS)),)
+ifneq ($(wildcard components/$1/$1.properties),)
 
 lib/$1.wasm: components/$1/$1.properties components/$1/README.md
 	static-config -f components/$1/$1.properties -o lib/$1.wasm
@@ -52,7 +36,7 @@ lib/$1.debug.wasm: components/$1/$1.properties components/$1/README.md
 	static-config -f components/$1/$1.properties -o lib/$1.debug.wasm
 	cp components/$1/README.md lib/$1.debug.wasm.md
 
-else ifneq ($(filter $1,$(WAC_COMPONENTS)),)
+else ifneq ($(wildcard components/$1/$1.wac),)
 
 WAC_DEPS_$1 := $(shell wac parse components/$1/$1.wac 2> /dev/null | jq -r '[.. | .package?.name? | strings | select(startswith("local:")) | sub("^local:"; "")] | unique[]')
 
@@ -64,7 +48,7 @@ lib/$1.debug.wasm: components/$1/$1.wac components/$1/README.md $$(foreach compo
 	wac compose $$(foreach component,$$(WAC_DEPS_$1),-d local:$$(component)=lib/$$(component).debug.wasm) -o lib/$1.debug.wasm components/$1/$1.wac
 	cp components/$1/README.md lib/$1.debug.wasm.md
 
-else ifneq ifneq ($(filter $1,$(WKG_COMPONENTS)),)
+else ifneq ($(wildcard components/$1/$1.wkg),)
 
 lib/$1.wasm: components/$1/$1.wkg components/$1/README.md
 	wkg oci pull $(shell cat components/$1/$1.wkg 2> /dev/null | head -1) -o lib/$1.wasm
@@ -72,6 +56,19 @@ lib/$1.wasm: components/$1/$1.wkg components/$1/README.md
 
 lib/$1.debug.wasm: components/$1/$1.wkg components/$1/README.md
 	wkg oci pull $(shell cat components/$1/$1.wkg  2> /dev/null | tail -1 2> /dev/null) -o lib/$1.debug.wasm
+	cp components/$1/README.md lib/$1.debug.wasm.md
+
+# cargo is checked last, other strategies may have a Cargo.toml for tests of non-rust sources
+else ifneq ($(wildcard components/$1/Cargo.toml),)
+
+lib/$1.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f) $(shell find crates -type f)
+	cargo build -p $1 --target wasm32-unknown-unknown --release
+	wasm-tools component new target/wasm32-unknown-unknown/release/$(subst -,_,$1).wasm -o lib/$1.wasm
+	cp components/$1/README.md lib/$1.wasm.md
+
+lib/$1.debug.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f) $(shell find crates -type f)
+	cargo build --target wasm32-unknown-unknown -p $1
+	wasm-tools component new target/wasm32-unknown-unknown/debug/$(subst -,_,$1).wasm -o lib/$1.debug.wasm
 	cp components/$1/README.md lib/$1.debug.wasm.md
 
 endif

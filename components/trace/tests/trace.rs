@@ -1,4 +1,4 @@
-//! Tests for the composed `trace` component, which has no crate of its own. Tests for the
+//! Tests for the `trace` component, composed from `trace.wac`. Tests for the
 //! individual interfaces live with each trace component.
 
 use test_harness::{Harness, IpAddressFamily, LogEntry};

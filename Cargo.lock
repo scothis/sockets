@@ -635,6 +635,15 @@ dependencies = [
 ]
 
 [[package]]
+name = "gate-tests"
+version = "0.1.0"
+dependencies = [
+ "test-harness",
+ "tokio",
+ "wasmtime",
+]
+
+[[package]]
 name = "gate-types"
 version = "0.1.0"
 dependencies = [
@@ -930,6 +939,46 @@ name = "latch-abstain-all"
 version = "0.1.0"
 dependencies = [
  "wit-bindgen",
+]
+
+[[package]]
+name = "latch-cidr"
+version = "0.1.0"
+dependencies = [
+ "ipnet",
+]
+
+[[package]]
+name = "latch-cidr-egress"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "latch-cidr",
+ "test-harness",
+ "tokio",
+ "wasmtime",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "latch-cidr-ingress"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "latch-cidr",
+ "test-harness",
+ "tokio",
+ "wasmtime",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "latch-cidr-tests"
+version = "0.1.0"
+dependencies = [
+ "test-harness",
+ "tokio",
+ "wasmtime",
 ]
 
 [[package]]
@@ -1728,6 +1777,15 @@ dependencies = [
  "tokio",
  "wasmtime",
  "wit-bindgen",
+]
+
+[[package]]
+name = "trace-tests"
+version = "0.1.0"
+dependencies = [
+ "test-harness",
+ "tokio",
+ "wasmtime",
 ]
 
 [[package]]

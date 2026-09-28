@@ -1,4 +1,5 @@
 use glob::{MatchOptions, Pattern};
+use std::cell::RefCell;
 use std::path::Path;
 
 use crate::exports::componentized::sockets::latch::{
@@ -153,10 +154,9 @@ impl Patterns {
         })
     }
 
-    #[allow(static_mut_refs)]
     fn authorize(name: String) -> Result<Decision, ErrorCode> {
         // config is loaded once, an invalid config fails every authorization
-        match unsafe { STATE.get_or_insert_with(Patterns::load) } {
+        match STATE.0.borrow_mut().get_or_insert_with(Patterns::load) {
             Ok(patterns) => Ok(patterns.decide(name)),
             Err(err) => Err(err.clone()),
         }
@@ -187,7 +187,12 @@ impl Patterns {
 }
 
 /// `None` until the config is loaded.
-static mut STATE: Option<Result<Patterns, ErrorCode>> = None;
+struct State(RefCell<Option<Result<Patterns, ErrorCode>>>);
+
+// components are single threaded, and a component is not reentered while it is running
+unsafe impl Sync for State {}
+
+static STATE: State = State(RefCell::new(None));
 
 impl Latch for GlobIpNameLookupLatch {
     fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {

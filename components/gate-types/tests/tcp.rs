@@ -1,9 +1,13 @@
 use std::time::Duration;
 
-use test_harness::{
-    collect, ip_socket_address, loopback, socket_addr, ErrorCode, Harness, HostLatch,
-    IpAddressFamily, LogEntry,
+use test_harness::bindings::componentized::sockets::latch::{
+    Decision, ErrorCode as LatchErrorCode,
 };
+use test_harness::{
+    collect, ip_socket_address, loopback, resolve, socket_addr, stream, ErrorCode, Harness,
+    HostLatch, IpAddressFamily, LogEntry,
+};
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 
@@ -375,5 +379,219 @@ async fn listen_forwards_connections_from_multiple_listeners() -> wasmtime::Resu
     })
     .await?;
     assert_eq!(gate.recorder().logs(), vec![]);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn send_abstained() -> wasmtime::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let address = ip_socket_address(listener.local_addr()?);
+
+    let mut gate = Harness::new("gate-types").build().await?;
+    let received = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            let socket = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            tcp.call_connect(accessor, socket, address)
+                .await?
+                .expect("connect");
+            let (mut peer, _) = timeout(Duration::from_secs(5), listener.accept()).await??;
+
+            let data = stream(accessor, b"hello".to_vec())?;
+            // the future comes straight from the host socket, see `resolve`
+            let _sent = tcp.call_send(accessor, socket, data).await?;
+
+            // the data stream closed, so the peer reads to the end
+            let mut received = vec![];
+            timeout(Duration::from_secs(5), peer.read_to_end(&mut received)).await??;
+            Ok(received)
+        })
+        .await?;
+    assert_eq!(received, b"hello");
+    assert_eq!(
+        gate.recorder().operations(),
+        vec!["tcp-socket.create", "tcp-socket.connect", "tcp-socket.send"]
+    );
+    assert_eq!(gate.recorder().logs(), vec![]);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn send_denied() -> wasmtime::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let address = ip_socket_address(listener.local_addr()?);
+
+    let mut gate = Harness::new("gate-types")
+        .host_latch(HostLatch::deny(&["tcp-socket.send"]))
+        .build()
+        .await?;
+    let (result, local_address) = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            let socket = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            tcp.call_connect(accessor, socket, address)
+                .await?
+                .expect("connect");
+            let (mut peer, local_address) =
+                timeout(Duration::from_secs(5), listener.accept()).await??;
+
+            let data = stream(accessor, b"hello".to_vec())?;
+            let sent = tcp.call_send(accessor, socket, data).await?;
+            let result = timeout(Duration::from_secs(5), resolve(accessor, sent)).await??;
+
+            let mut buf = [0; 16];
+            assert!(
+                timeout(Duration::from_millis(200), peer.read(&mut buf))
+                    .await
+                    .is_err(),
+                "no data should reach the peer"
+            );
+            Ok((result, local_address))
+        })
+        .await?;
+    assert!(matches!(result, Err(ErrorCode::AccessDenied)));
+    assert_eq!(
+        gate.recorder().logs(),
+        vec![LogEntry::warn(
+            "componentized-gate",
+            format!(
+                "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.send SOCKET={local_address}<->{}",
+                listener.local_addr()?
+            )
+        )]
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn send_latch_error() -> wasmtime::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let address = ip_socket_address(listener.local_addr()?);
+
+    let mut gate = Harness::new("gate-types")
+        .host_latch(HostLatch::new(|auth| {
+            if auth.operation == "tcp-socket.send" {
+                Err(LatchErrorCode::Other(Some("boom".to_string())))
+            } else {
+                Ok(Decision::Abstained)
+            }
+        }))
+        .build()
+        .await?;
+    let result = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            let socket = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            tcp.call_connect(accessor, socket, address)
+                .await?
+                .expect("connect");
+            let data = stream(accessor, b"hello".to_vec())?;
+            let sent = tcp.call_send(accessor, socket, data).await?;
+            Ok(timeout(Duration::from_secs(5), resolve(accessor, sent)).await??)
+        })
+        .await?;
+    assert!(
+        matches!(result, Err(ErrorCode::Other(Some(ref message))) if message == "latch-error: boom")
+    );
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn receive_abstained() -> wasmtime::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let address = ip_socket_address(listener.local_addr()?);
+
+    let mut gate = Harness::new("gate-types").build().await?;
+    let received = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            let socket = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            tcp.call_connect(accessor, socket, address)
+                .await?
+                .expect("connect");
+            let (mut peer, _) = timeout(Duration::from_secs(5), listener.accept()).await??;
+            peer.write_all(b"hello").await?;
+            peer.shutdown().await?;
+
+            // the future comes straight from the host socket, see `resolve`
+            let (data, _done) = tcp.call_receive(accessor, socket).await?;
+            let mut data = collect(accessor, data)?;
+            let mut received = vec![];
+            while let Some(byte) = timeout(Duration::from_secs(5), data.recv()).await? {
+                received.push(byte);
+            }
+            Ok(received)
+        })
+        .await?;
+    assert_eq!(received, b"hello");
+    assert_eq!(
+        gate.recorder().operations(),
+        vec![
+            "tcp-socket.create",
+            "tcp-socket.connect",
+            "tcp-socket.receive"
+        ]
+    );
+    assert_eq!(gate.recorder().logs(), vec![]);
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn receive_denied() -> wasmtime::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let address = ip_socket_address(listener.local_addr()?);
+
+    let mut gate = Harness::new("gate-types")
+        .host_latch(HostLatch::deny(&["tcp-socket.receive"]))
+        .build()
+        .await?;
+    let (received, result, local_address) = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            let socket = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            tcp.call_connect(accessor, socket, address)
+                .await?
+                .expect("connect");
+            let (mut peer, local_address) =
+                timeout(Duration::from_secs(5), listener.accept()).await??;
+            peer.write_all(b"hello").await?;
+
+            let (data, done) = tcp.call_receive(accessor, socket).await?;
+            let mut data = collect(accessor, data)?;
+            let mut received = vec![];
+            while let Some(byte) = timeout(Duration::from_secs(5), data.recv()).await? {
+                received.push(byte);
+            }
+            let result = timeout(Duration::from_secs(5), resolve(accessor, done)).await??;
+            Ok((received, result, local_address))
+        })
+        .await?;
+    assert_eq!(received, Vec::<u8>::new());
+    assert!(matches!(result, Err(ErrorCode::AccessDenied)));
+    assert_eq!(
+        gate.recorder().logs(),
+        vec![LogEntry::warn(
+            "componentized-gate",
+            format!(
+                "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.receive SOCKET={local_address}<->{}",
+                listener.local_addr()?
+            )
+        )]
+    );
     Ok(())
 }

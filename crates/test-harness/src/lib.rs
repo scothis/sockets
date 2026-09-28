@@ -16,10 +16,11 @@ use std::sync::{Arc, Mutex};
 use std::task::Poll;
 
 use tokio::sync::mpsc;
+use tokio::sync::oneshot;
 use wac_graph::{types::Package, CompositionGraph, EncodeOptions};
 use wasmtime::component::{
-    Accessor, Component, HasSelf, Lift, Linker, ResourceTable, Source, StreamConsumer,
-    StreamReader, StreamResult,
+    Accessor, Component, FutureConsumer, FutureReader, HasSelf, Lift, Linker, Lower, ResourceTable,
+    Source, StreamConsumer, StreamReader, StreamResult,
 };
 use wasmtime::error::Context as _;
 use wasmtime::{bail, format_err, Config, Engine, Result, Store, StoreContextMut};
@@ -114,6 +115,51 @@ pub fn collect<T: Lift + Send + Sync + 'static>(
     let (tx, rx) = mpsc::unbounded_channel();
     accessor.with(|store| stream.pipe(store, ChannelConsumer(tx)))?;
     Ok(rx)
+}
+
+/// Create a stream for the guest that yields the items, then closes.
+pub fn stream<T: Lower + Lift + Unpin + Send + Sync + 'static>(
+    accessor: &Accessor<Ctx>,
+    items: Vec<T>,
+) -> Result<StreamReader<T>> {
+    accessor.with(|store| StreamReader::new(store, items))
+}
+
+/// Wait for the value of a guest future.
+///
+/// Only for futures the guest writes itself. A future the guest passes through from a wasmtime-wasi
+/// host import is transferred host to host, which requires the same Rust type on both ends, and
+/// the harness' exported types are generated separately from wasmtime-wasi's.
+pub async fn resolve<T: Lift + Send + Sync + 'static>(
+    accessor: &Accessor<Ctx>,
+    future: FutureReader<T>,
+) -> Result<T> {
+    let (tx, rx) = oneshot::channel();
+    accessor.with(|store| future.pipe(store, OneshotConsumer(Some(tx))))?;
+    rx.await
+        .map_err(|_| format_err!("future closed without a value"))
+}
+
+struct OneshotConsumer<T>(Option<oneshot::Sender<T>>);
+
+impl<D, T: Lift + Send + Sync + 'static> FutureConsumer<D> for OneshotConsumer<T> {
+    type Item = T;
+
+    fn poll_consume(
+        self: Pin<&mut Self>,
+        _cx: &mut std::task::Context<'_>,
+        store: StoreContextMut<D>,
+        mut source: Source<'_, T>,
+        _finish: bool,
+    ) -> Poll<Result<()>> {
+        let mut item = None;
+        source.read(store, &mut item)?;
+        if let (Some(item), Some(tx)) = (item, self.get_mut().0.take()) {
+            // the receiver is only dropped when the test stopped waiting
+            let _ = tx.send(item);
+        }
+        Poll::Ready(Ok(()))
+    }
 }
 
 struct ChannelConsumer<T>(mpsc::UnboundedSender<T>);
