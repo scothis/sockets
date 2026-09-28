@@ -508,3 +508,60 @@ async fn invalid_config_fails_every_receive() -> wasmtime::Result<()> {
     );
     Ok(())
 }
+
+/// A port that is free on loopback, the listener is closed so the guest can bind it.
+fn free_port() -> std::io::Result<u16> {
+    Ok(std::net::TcpListener::bind("127.0.0.1:0")?
+        .local_addr()?
+        .port())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tcp_inbound_connection_denied_to_matching_local_port() -> wasmtime::Result<()> {
+    let denied_port = free_port()?;
+
+    // inbound traffic matches the guest's local port, not the peer's ephemeral port
+    let mut gate = Harness::new("gate-types")
+        .latch(LATCH)
+        .config("deny", &format!("127.0.0.0/8:{denied_port}"))
+        .build()
+        .await?;
+    gate.run(async |accessor, gate| {
+        let tcp = gate.wasi_sockets_types().tcp_socket();
+        let mut listen = async |port| -> wasmtime::Result<_> {
+            let socket = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            tcp.call_bind(accessor, socket, loopback(port))
+                .await?
+                .expect("bind");
+            let connections = tcp.call_listen(accessor, socket).await?.expect("listen");
+            let address = tcp
+                .call_get_local_address(accessor, socket)
+                .await?
+                .expect("local address");
+            Ok((collect(accessor, connections)?, socket_addr(address)))
+        };
+        let (mut denied, denied_address) = listen(denied_port).await?;
+        let (mut allowed, allowed_address) = listen(0).await?;
+
+        let _to_denied = TcpStream::connect(denied_address).await?;
+        let _to_allowed = TcpStream::connect(allowed_address).await?;
+        assert!(
+            timeout(Duration::from_secs(5), allowed.recv())
+                .await?
+                .is_some(),
+            "the connection to the other port should be accepted"
+        );
+        assert!(
+            timeout(Duration::from_millis(200), denied.recv())
+                .await
+                .is_err(),
+            "the connection to the denied port should not reach the guest"
+        );
+        Ok(())
+    })
+    .await?;
+    Ok(())
+}

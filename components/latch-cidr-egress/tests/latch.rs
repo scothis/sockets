@@ -696,3 +696,121 @@ async fn tcp_send_on_accepted_connection_abstained() -> wasmtime::Result<()> {
     assert_eq!(gate.recorder().logs(), vec![]);
     Ok(())
 }
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tcp_connect_denied_to_matching_port() -> wasmtime::Result<()> {
+    let denied = TcpListener::bind("127.0.0.1:0").await?;
+    let allowed = TcpListener::bind("127.0.0.1:0").await?;
+    let denied_address = ip_socket_address(denied.local_addr()?);
+    let allowed_address = ip_socket_address(allowed.local_addr()?);
+
+    // outbound traffic matches the remote port
+    let mut gate = Harness::new("gate-types")
+        .latch(LATCH)
+        .config(
+            "deny",
+            &format!("127.0.0.1:{}", denied.local_addr()?.port()),
+        )
+        .build()
+        .await?;
+    let (to_denied, to_allowed) = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            let first = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            let to_denied = tcp.call_connect(accessor, first, denied_address).await?;
+            let second = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            let to_allowed = tcp.call_connect(accessor, second, allowed_address).await?;
+            timeout(Duration::from_secs(5), allowed.accept()).await??;
+            Ok((to_denied, to_allowed))
+        })
+        .await?;
+    assert!(matches!(to_denied, Err(ErrorCode::AccessDenied)));
+    assert!(to_allowed.is_ok());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn tcp_connect_denied_to_matching_port_on_any_address() -> wasmtime::Result<()> {
+    let denied = TcpListener::bind("127.0.0.1:0").await?;
+    let allowed = TcpListener::bind("127.0.0.1:0").await?;
+    let denied_address = ip_socket_address(denied.local_addr()?);
+    let allowed_address = ip_socket_address(allowed.local_addr()?);
+
+    // ports without an address match every address
+    let mut gate = Harness::new("gate-types")
+        .latch(LATCH)
+        .config("deny", &format!(":{}", denied.local_addr()?.port()))
+        .build()
+        .await?;
+    let (to_denied, to_allowed) = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            let first = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            let to_denied = tcp.call_connect(accessor, first, denied_address).await?;
+            let second = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            let to_allowed = tcp.call_connect(accessor, second, allowed_address).await?;
+            timeout(Duration::from_secs(5), allowed.accept()).await??;
+            Ok((to_denied, to_allowed))
+        })
+        .await?;
+    assert!(matches!(to_denied, Err(ErrorCode::AccessDenied)));
+    assert!(to_allowed.is_ok());
+    Ok(())
+}
+
+#[tokio::test(flavor = "multi_thread")]
+async fn config_mistakes_are_warned() -> wasmtime::Result<()> {
+    let listener = TcpListener::bind("127.0.0.1:0").await?;
+    let address = ip_socket_address(listener.local_addr()?);
+
+    let mut gate = Harness::new("gate-types")
+        .latch(LATCH)
+        .config("deni", "10.0.0.0/8")
+        .config("deny", "127.1.2.3/8")
+        .build()
+        .await?;
+    let result = gate
+        .run(async |accessor, gate| {
+            let tcp = gate.wasi_sockets_types().tcp_socket();
+            let socket = tcp
+                .call_create(accessor, IpAddressFamily::Ipv4)
+                .await?
+                .expect("create");
+            Ok(tcp.call_connect(accessor, socket, address).await?)
+        })
+        .await?;
+    // the config is accepted as documented, host bits are ignored so 127.0.0.0/8 is denied
+    assert!(matches!(result, Err(ErrorCode::AccessDenied)));
+    let warnings: Vec<_> = gate
+        .recorder()
+        .logs()
+        .into_iter()
+        .filter(|log| log.context == "componentized-latch")
+        .collect();
+    assert_eq!(
+        warnings,
+        vec![
+            LogEntry::warn(
+                "componentized-latch",
+                "Config issue LATCH=latch-cidr-egress KEY=deni VALUE=10.0.0.0/8 DETAIL=unknown key is ignored, expected a key starting with 'deny' or 'abstain', 'default' or 'reason'"
+            ),
+            LogEntry::warn(
+                "componentized-latch",
+                "Config issue LATCH=latch-cidr-egress KEY=deny VALUE=127.1.2.3/8 DETAIL=bits set beyond the prefix length are ignored, the range is 127.0.0.0/8"
+            ),
+        ]
+    );
+    Ok(())
+}

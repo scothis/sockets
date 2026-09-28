@@ -3,10 +3,10 @@
 //! This crate has no component bindings, latches map [`Action`] and [`Reason`] to their own
 //! generated types.
 
-use std::collections::BTreeSet;
+use std::collections::{BTreeSet, HashMap};
 use std::net::{IpAddr, SocketAddr};
 
-use ipnet::{IpNet, Ipv4Net};
+use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 
 /// What a latch does with a remote address.
 #[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord)]
@@ -37,44 +37,138 @@ impl Reason {
 
 struct Rule {
     network: IpNet,
+    /// inclusive, `None` matches every port
+    ports: Option<(u16, u16)>,
     action: Action,
 }
 
 impl Rule {
-    fn new(value: &str, action: Action) -> Result<Rule, String> {
-        Ok(Rule {
-            network: parse_network(value)?,
-            action,
-        })
+    /// Parse the rules for a config value, one rule for each port or port range in the value's
+    /// port list, sharing a common network.
+    fn parse(value: &str, action: Action, warnings: &mut Vec<String>) -> Result<Vec<Rule>, String> {
+        let (network, ports) = parse_rule(value, warnings)?;
+        Ok(ports
+            .into_iter()
+            .map(|ports| Rule {
+                network,
+                ports,
+                action,
+            })
+            .collect())
     }
 
     /// The prefix length in the IPv6 address space, an IPv4 range is compared as the
     /// IPv4-mapped IPv6 range it represents.
-    fn specificity(&self) -> u8 {
+    fn prefix_specificity(&self) -> u8 {
         match self.network {
             IpNet::V4(ipv4) => ipv4.prefix_len() + 96,
             IpNet::V6(ipv6) => ipv6.prefix_len(),
         }
     }
 
-    /// Whether the range contains a canonical address. An IPv6 range that contains the
+    /// The number of ports the rule matches, fewer is more specific.
+    fn port_count(&self) -> u32 {
+        match self.ports {
+            Some((start, end)) => u32::from(end) - u32::from(start) + 1,
+            None => u32::from(u16::MAX) + 1,
+        }
+    }
+
+    /// Whether the rule matches a canonical address and port. An IPv6 range that contains the
     /// IPv4-mapped range, like `::/0`, also contains every IPv4 address.
-    fn contains(&self, address: IpAddr) -> bool {
-        match (self.network, address) {
+    fn contains(&self, address: IpAddr, port: u16) -> bool {
+        let address_matches = match (self.network, address) {
             (IpNet::V6(ipv6), IpAddr::V4(ipv4)) => ipv6.contains(&ipv4.to_ipv6_mapped()),
             (network, address) => network.contains(&address),
-        }
+        };
+        let port_matches = self
+            .ports
+            .is_none_or(|(start, end)| start <= port && port <= end);
+        address_matches && port_matches
     }
 }
 
-/// Parse a CIDR range, a bare address is a range containing only that address.
-fn parse_network(value: &str) -> Result<IpNet, String> {
+/// Parse a CIDR range with an optional port list, e.g. `10.0.0.0/8`, `10.0.0.0/8:443`,
+/// `10.1.2.3:80,443,8000-8999` or `[fd00::/8]:443`. An IPv6 range with a port list must be in
+/// brackets. Without a port list, the range has a single rule matching every port. Without an
+/// address, e.g. `:443`, the ports match every address.
+fn parse_rule(
+    value: &str,
+    warnings: &mut Vec<String>,
+) -> Result<(IpNet, Vec<Option<(u16, u16)>>), String> {
+    let value = value.trim();
+    let (network, ports) = if let Some(rest) = value.strip_prefix('[') {
+        let (network, rest) = rest
+            .split_once(']')
+            .ok_or_else(|| "missing ']' after the address".to_string())?;
+        match rest {
+            "" => (network, None),
+            _ => (
+                network,
+                Some(
+                    rest.strip_prefix(':')
+                        .ok_or_else(|| "expected ':' and a port range after ']'".to_string())?,
+                ),
+            ),
+        }
+    } else if value.matches(':').count() == 1 {
+        // an IPv4 range and a port range, an IPv6 range has more than one ':'
+        let (network, ports) = value.split_once(':').expect("value contains ':'");
+        (network, Some(ports))
+    } else {
+        (value, None)
+    };
+    let network = match (network.trim(), ports) {
+        // `::/0` contains every IPv6 address, and every IPv4 address in its IPv4-mapped form
+        ("", Some(_)) => IpNet::V6(Ipv6Net::default()),
+        (network, _) => parse_network(network, warnings)?,
+    };
+    let ports = match ports {
+        Some(ports) => parse_port_list(ports)?.into_iter().map(Some).collect(),
+        None => vec![None],
+    };
+    Ok((network, ports))
+}
+
+/// Parse a comma separated list of ports and port ranges, e.g. `80,443,8000-8999`.
+fn parse_port_list(value: &str) -> Result<Vec<(u16, u16)>, String> {
+    value
+        .split(',')
+        .map(|ports| match ports.trim() {
+            "" => Err("empty entry in the port list".to_string()),
+            ports => parse_ports(ports),
+        })
+        .collect()
+}
+
+/// Parse a single port, e.g. `443`, or an inclusive port range, e.g. `8000-8999`.
+fn parse_ports(value: &str) -> Result<(u16, u16), String> {
+    let (start, end) = value.split_once('-').unwrap_or((value, value));
+    let port = |port: &str| {
+        port.parse::<u16>()
+            .map_err(|err| format!("invalid port {port:?}: {err}"))
+    };
+    let (start, end) = (port(start)?, port(end)?);
+    if start > end {
+        return Err(format!("port range {start}-{end} is empty"));
+    }
+    Ok((start, end))
+}
+
+/// Parse a CIDR range, a bare address is a range containing only that address. Bits set beyond
+/// the prefix length are ignored with a warning, they are usually a mistake, e.g. `10.1.2.3/8`
+/// for `10.1.2.3/32`.
+fn parse_network(value: &str, warnings: &mut Vec<String>) -> Result<IpNet, String> {
     let value = value.trim();
     let network = if value.contains('/') {
-        value
-            .parse::<IpNet>()
-            .map(|network| network.trunc())
-            .map_err(|err| err.to_string())?
+        let network = value.parse::<IpNet>().map_err(|err| err.to_string())?;
+        let truncated = network.trunc();
+        if truncated != network {
+            warnings.push(format!(
+                "bits set beyond the prefix length are ignored, the range is {truncated}"
+            ));
+        }
+        truncated
     } else {
         value
             .parse::<IpAddr>()
@@ -104,37 +198,72 @@ pub struct Ranges {
     rules: Vec<Rule>,
     reason: Reason,
     default: Action,
+    warnings: Vec<String>,
 }
 
 impl Ranges {
     /// Parse the ranges from config key/value pairs, describing the offending entry on error as
-    /// `KEY=<key> VALUE=<value> ERROR=<error>`.
+    /// `KEY=<key> VALUE=<value> ERROR=<error>`. Entries that are accepted but likely mistakes are
+    /// reported by [`Ranges::warnings`].
     pub fn parse(config: impl IntoIterator<Item = (String, String)>) -> Result<Ranges, String> {
         let mut rules: Vec<Rule> = vec![];
         let mut reason = Reason::AccessDenied;
         let mut default = Action::Abstain;
+        let mut warnings = vec![];
 
-        for (key, value) in config {
+        // only the last value for a key is used, earlier values are overridden
+        let config: Vec<(String, String)> = config.into_iter().collect();
+        let last: HashMap<&str, usize> = config
+            .iter()
+            .enumerate()
+            .map(|(index, (key, _))| (key.as_str(), index))
+            .collect();
+
+        for (index, (key, value)) in config.iter().enumerate() {
+            if last[key.as_str()] != index {
+                warnings.push(format!(
+                    "KEY={key} VALUE={value} DETAIL=duplicate key is ignored, only the last value \
+                     for the key is used"
+                ));
+                continue;
+            }
             let invalid = |err: String| format!("KEY={key} VALUE={value} ERROR={err}");
+            let mut value_warnings = vec![];
             if key.starts_with("deny") {
-                rules.push(Rule::new(&value, Action::Deny).map_err(invalid)?);
+                rules.extend(
+                    Rule::parse(&value, Action::Deny, &mut value_warnings).map_err(invalid)?,
+                );
             } else if key.starts_with("abstain") {
-                rules.push(Rule::new(&value, Action::Abstain).map_err(invalid)?);
+                rules.extend(
+                    Rule::parse(&value, Action::Abstain, &mut value_warnings).map_err(invalid)?,
+                );
             } else if key == "reason" {
-                reason = Reason::parse(value);
+                reason = Reason::parse(value.clone());
             } else if key == "default" {
                 default = match value.as_str() {
                     "deny" => Action::Deny,
                     "abstain" => Action::Abstain,
                     _ => return Err(invalid("expected 'deny' or 'abstain'".to_string())),
                 }
+            } else {
+                value_warnings.push(
+                    "unknown key is ignored, expected a key starting with 'deny' or 'abstain', \
+                     'default' or 'reason'"
+                        .to_string(),
+                );
             }
+            warnings.extend(
+                value_warnings
+                    .into_iter()
+                    .map(|warning| format!("KEY={key} VALUE={value} DETAIL={warning}")),
+            );
         }
 
-        // the longest prefix is the most specific
+        // the longest prefix is the most specific, then the fewest ports
         rules.sort_by(|a, b| {
-            b.specificity()
-                .cmp(&a.specificity())
+            b.prefix_specificity()
+                .cmp(&a.prefix_specificity())
+                .then(a.port_count().cmp(&b.port_count()))
                 .then(a.action.cmp(&b.action))
         });
 
@@ -142,28 +271,36 @@ impl Ranges {
             rules,
             reason,
             default,
+            warnings,
         })
     }
 
-    /// The action for the address, from the most specific matching range or the default.
-    pub fn action(&self, address: IpAddr) -> Action {
-        self.matching(address).unwrap_or(self.default)
+    /// The action for the address and port, from the most specific matching range or the
+    /// default.
+    pub fn action(&self, address: IpAddr, port: u16) -> Action {
+        self.matching(address, port).unwrap_or(self.default)
     }
 
     /// The action of the most specific matching range.
-    pub fn matching(&self, address: IpAddr) -> Option<Action> {
+    pub fn matching(&self, address: IpAddr, port: u16) -> Option<Action> {
         // IPv4-mapped IPv6 addresses must not bypass IPv4 ranges
         let address = address.to_canonical();
 
         self.rules
             .iter()
-            .find(|rule| rule.contains(address))
+            .find(|rule| rule.contains(address, port))
             .map(|rule| rule.action)
     }
 
     /// The reason denials are reported with.
     pub fn reason(&self) -> &Reason {
         &self.reason
+    }
+
+    /// Config entries that were accepted but are likely mistakes, formatted as
+    /// `KEY=<key> VALUE=<value> DETAIL=<warning>`.
+    pub fn warnings(&self) -> &[String] {
+        &self.warnings
     }
 }
 
@@ -219,12 +356,19 @@ mod tests {
         parse(config).expect("valid config")
     }
 
+    /// An arbitrary port, for ranges without a port range.
+    const PORT: u16 = 12345;
+
     fn matching(ranges: &Ranges, address: &str) -> Option<Action> {
-        ranges.matching(address.parse().unwrap())
+        ranges.matching(address.parse().unwrap(), PORT)
+    }
+
+    fn matching_port(ranges: &Ranges, address: &str, port: u16) -> Option<Action> {
+        ranges.matching(address.parse().unwrap(), port)
     }
 
     fn action(ranges: &Ranges, address: &str) -> Action {
-        ranges.action(address.parse().unwrap())
+        ranges.action(address.parse().unwrap(), PORT)
     }
 
     #[test]
@@ -469,6 +613,322 @@ mod tests {
                 .unwrap_or_else(|| panic!("{value:?} should be invalid"));
             assert!(
                 err.starts_with(&format!("KEY=deny-2 VALUE={value} ERROR=")),
+                "{err}"
+            );
+        }
+    }
+
+    #[test]
+    fn port_range_on_ipv4_range() {
+        let ranges = ranges(&[("deny", "10.0.0.0/8:8000-8999")]);
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 8000), Some(Action::Deny));
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 8999), Some(Action::Deny));
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 7999), None);
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 9000), None);
+        assert_eq!(matching_port(&ranges, "11.1.2.3", 8000), None);
+    }
+
+    #[test]
+    fn single_port_on_bare_address() {
+        let ranges = ranges(&[("deny", "10.1.2.3:53")]);
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 53), Some(Action::Deny));
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 54), None);
+        assert_eq!(matching_port(&ranges, "10.1.2.4", 53), None);
+    }
+
+    #[test]
+    fn port_range_on_ipv6_range_in_brackets() {
+        let ranges = ranges(&[("deny-1", "[fd00::/8]:443"), ("deny-2", "[2001:db8::1]:53")]);
+        assert_eq!(matching_port(&ranges, "fd12::1", 443), Some(Action::Deny));
+        assert_eq!(matching_port(&ranges, "fd12::1", 80), None);
+        assert_eq!(
+            matching_port(&ranges, "2001:db8::1", 53),
+            Some(Action::Deny)
+        );
+        assert_eq!(matching_port(&ranges, "2001:db8::1", 54), None);
+    }
+
+    #[test]
+    fn ipv6_range_without_port_needs_no_brackets() {
+        let bare = ranges(&[("deny", "fd00::/8")]);
+        let bracketed = ranges(&[("deny", "[fd00::/8]")]);
+        for ranges in [bare, bracketed] {
+            assert_eq!(matching_port(&ranges, "fd12::1", 1), Some(Action::Deny));
+            assert_eq!(matching_port(&ranges, "fd12::1", 65535), Some(Action::Deny));
+        }
+    }
+
+    #[test]
+    fn port_range_on_ipv4_mapped_range() {
+        let ranges = ranges(&[("deny", "[::ffff:10.0.0.0/104]:443")]);
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 443), Some(Action::Deny));
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 80), None);
+    }
+
+    #[test]
+    fn full_port_range() {
+        let ranges = ranges(&[("deny", "10.0.0.0/8:0-65535")]);
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 0), Some(Action::Deny));
+        assert_eq!(
+            matching_port(&ranges, "10.1.2.3", 65535),
+            Some(Action::Deny)
+        );
+    }
+
+    #[test]
+    fn address_prefix_decides_before_ports() {
+        // the /16 is more specific than the /8, even though the /8 has a port range
+        let ranges = ranges(&[("deny", "10.0.0.0/8:443"), ("abstain", "10.1.0.0/16")]);
+        assert_eq!(
+            matching_port(&ranges, "10.1.2.3", 443),
+            Some(Action::Abstain)
+        );
+        assert_eq!(matching_port(&ranges, "10.2.3.4", 443), Some(Action::Deny));
+        assert_eq!(matching_port(&ranges, "10.2.3.4", 80), None);
+    }
+
+    #[test]
+    fn fewer_ports_decide_for_equal_prefixes() {
+        for config in [
+            [("abstain", "10.0.0.0/8"), ("deny", "10.0.0.0/8:443")],
+            [("deny", "10.0.0.0/8:443"), ("abstain", "10.0.0.0/8")],
+        ] {
+            let ranges = ranges(&config);
+            assert_eq!(matching_port(&ranges, "10.1.2.3", 443), Some(Action::Deny));
+            assert_eq!(
+                matching_port(&ranges, "10.1.2.3", 80),
+                Some(Action::Abstain)
+            );
+        }
+
+        let ranges = ranges(&[("deny", "10.0.0.0/8:1-1024"), ("abstain", "10.0.0.0/8:22")]);
+        assert_eq!(
+            matching_port(&ranges, "10.1.2.3", 22),
+            Some(Action::Abstain)
+        );
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 80), Some(Action::Deny));
+    }
+
+    #[test]
+    fn deny_wins_for_equal_prefixes_and_ports() {
+        let ranges = ranges(&[("abstain", "10.0.0.0/8:443"), ("deny", "10.0.0.0/8:443")]);
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 443), Some(Action::Deny));
+    }
+
+    #[test]
+    fn port_list() {
+        let ranges = ranges(&[("deny", "10.0.0.0/8:80,443,8000-8999")]);
+        for port in [80, 443, 8000, 8500, 8999] {
+            assert_eq!(
+                matching_port(&ranges, "10.1.2.3", port),
+                Some(Action::Deny),
+                "{port}"
+            );
+        }
+        for port in [79, 81, 442, 444, 7999, 9000] {
+            assert_eq!(matching_port(&ranges, "10.1.2.3", port), None, "{port}");
+        }
+    }
+
+    #[test]
+    fn port_list_on_ipv6_range_in_brackets() {
+        let ranges = ranges(&[("deny", "[fd00::/8]:80,443")]);
+        assert_eq!(matching_port(&ranges, "fd12::1", 80), Some(Action::Deny));
+        assert_eq!(matching_port(&ranges, "fd12::1", 443), Some(Action::Deny));
+        assert_eq!(matching_port(&ranges, "fd12::1", 8080), None);
+    }
+
+    #[test]
+    fn port_list_allows_whitespace() {
+        let ranges = ranges(&[("deny", "10.0.0.0/8: 80 , 443 ")]);
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 80), Some(Action::Deny));
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 443), Some(Action::Deny));
+    }
+
+    #[test]
+    fn port_list_entries_are_separate_rules() {
+        // each entry is as specific as its own ports, the single port is more specific than the
+        // abstained range while the wide range in the same list is less specific
+        let ranges = ranges(&[
+            ("deny", "10.0.0.0/8:22,1000-2000"),
+            ("abstain", "10.0.0.0/8:1500-1600"),
+        ]);
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 22), Some(Action::Deny));
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 1000), Some(Action::Deny));
+        assert_eq!(
+            matching_port(&ranges, "10.1.2.3", 1500),
+            Some(Action::Abstain)
+        );
+    }
+
+    #[test]
+    fn ports_without_address_match_every_address() {
+        let ranges = ranges(&[("deny", ":80,443")]);
+        for address in ["10.1.2.3", "192.0.2.1", "::ffff:10.1.2.3", "2001:db8::1"] {
+            assert_eq!(
+                matching_port(&ranges, address, 443),
+                Some(Action::Deny),
+                "{address}"
+            );
+            assert_eq!(
+                matching_port(&ranges, address, 80),
+                Some(Action::Deny),
+                "{address}"
+            );
+            assert_eq!(matching_port(&ranges, address, 8080), None, "{address}");
+        }
+    }
+
+    #[test]
+    fn ports_without_address_are_the_least_specific_address() {
+        // any range with an address is more specific, regardless of its ports
+        let ranges = ranges(&[("deny", ":22"), ("abstain", "10.0.0.0/8")]);
+        assert_eq!(
+            matching_port(&ranges, "10.1.2.3", 22),
+            Some(Action::Abstain)
+        );
+        assert_eq!(matching_port(&ranges, "11.1.2.3", 22), Some(Action::Deny));
+        assert_eq!(matching_port(&ranges, "11.1.2.3", 80), None);
+    }
+
+    /// The worked example in the latch-cidr-egress and latch-cidr-ingress READMEs.
+    #[test]
+    fn readme_precedence_example() {
+        let ranges = ranges(&[
+            ("abstain-1", "0.0.0.0/0:443"),
+            ("deny-1", "10.0.0.0/8"),
+            ("abstain-2", "10.1.0.0/16"),
+            ("deny-2", "10.1.2.3:22"),
+            ("deny-3", ":25"),
+        ]);
+        for (address, port, expected) in [
+            ("192.0.2.1", 443, Action::Abstain),
+            ("192.0.2.1", 25, Action::Deny),
+            ("192.0.2.1", 80, Action::Abstain),
+            ("10.2.0.1", 443, Action::Deny),
+            ("10.1.0.1", 25, Action::Abstain),
+            ("10.1.2.3", 22, Action::Deny),
+            ("10.1.2.3", 80, Action::Abstain),
+            ("2001:db8::1", 25, Action::Deny),
+            ("2001:db8::1", 443, Action::Abstain),
+            ("::ffff:10.2.0.1", 443, Action::Deny),
+        ] {
+            assert_eq!(
+                ranges.action(address.parse().unwrap(), port),
+                expected,
+                "{address} port {port}"
+            );
+        }
+        // the example relies on the default for these
+        assert_eq!(ranges.matching("192.0.2.1".parse().unwrap(), 80), None);
+        assert_eq!(ranges.matching("2001:db8::1".parse().unwrap(), 443), None);
+    }
+
+    #[test]
+    fn unknown_keys_are_warned() {
+        let ranges = ranges(&[("deni-1", "10.0.0.0/8"), ("Deny-2", "10.0.0.0/8")]);
+        assert_eq!(matching(&ranges, "10.1.2.3"), None);
+        assert_eq!(
+            ranges.warnings(),
+            [
+                "KEY=deni-1 VALUE=10.0.0.0/8 DETAIL=unknown key is ignored, expected a key \
+                 starting with 'deny' or 'abstain', 'default' or 'reason'",
+                "KEY=Deny-2 VALUE=10.0.0.0/8 DETAIL=unknown key is ignored, expected a key \
+                 starting with 'deny' or 'abstain', 'default' or 'reason'",
+            ]
+        );
+    }
+
+    #[test]
+    fn host_bits_are_warned() {
+        let ranges = ranges(&[
+            ("deny-1", "10.1.2.3/8:443"),
+            ("deny-2", "[2001:db8::1/32]"),
+            ("deny-3", "[::ffff:10.1.2.3/104]"),
+        ]);
+        assert_eq!(
+            ranges.warnings(),
+            [
+                "KEY=deny-1 VALUE=10.1.2.3/8:443 DETAIL=bits set beyond the prefix length are \
+                 ignored, the range is 10.0.0.0/8",
+                "KEY=deny-2 VALUE=[2001:db8::1/32] DETAIL=bits set beyond the prefix length are \
+                 ignored, the range is 2001:db8::/32",
+                "KEY=deny-3 VALUE=[::ffff:10.1.2.3/104] DETAIL=bits set beyond the prefix length \
+                 are ignored, the range is ::ffff:10.0.0.0/104",
+            ]
+        );
+    }
+
+    #[test]
+    fn duplicate_keys_use_the_last_value() {
+        let ranges = ranges(&[
+            ("deny-1", "10.0.0.0/8"),
+            ("abstain-1", "192.168.0.0/16"),
+            ("deny-1", "172.16.0.0/12"),
+        ]);
+        // only the last deny-1 is active
+        assert_eq!(matching(&ranges, "10.1.2.3"), None);
+        assert_eq!(matching(&ranges, "172.16.1.2"), Some(Action::Deny));
+        assert_eq!(matching(&ranges, "192.168.1.2"), Some(Action::Abstain));
+        assert_eq!(
+            ranges.warnings(),
+            [
+                "KEY=deny-1 VALUE=10.0.0.0/8 DETAIL=duplicate key is ignored, only the last value \
+              for the key is used"
+            ]
+        );
+    }
+
+    #[test]
+    fn duplicate_default_and_reason_use_the_last_value() {
+        // an overridden invalid value is not an error, it is never used
+        let ranges = ranges(&[
+            ("default", "grant"),
+            ("reason", "invalid-argument"),
+            ("default", "deny"),
+            ("reason", "access-denied"),
+        ]);
+        assert_eq!(action(&ranges, "10.1.2.3"), Action::Deny);
+        assert_eq!(ranges.reason(), &Reason::AccessDenied);
+        assert_eq!(ranges.warnings().len(), 2);
+    }
+
+    #[test]
+    fn valid_config_has_no_warnings() {
+        let ranges = ranges(&[
+            ("deny", "10.0.0.0/8"),
+            ("abstain", "10.1.2.3"),
+            ("deny-ports", ":22"),
+            ("default", "deny"),
+            ("reason", "invalid-argument"),
+        ]);
+        assert!(ranges.warnings().is_empty(), "{:?}", ranges.warnings());
+    }
+
+    #[test]
+    fn invalid_port_range_is_invalid() {
+        for value in [
+            "10.0.0.0/8:",
+            "10.0.0.0/8:65536",
+            "10.0.0.0/8:http",
+            "10.0.0.0/8:9000-8000",
+            "10.0.0.0/8:1-2-3",
+            "10.0.0.0/8:80,",
+            "10.0.0.0/8:,80",
+            "10.0.0.0/8:80,,443",
+            "10.0.0.0/8:80,http",
+            "10.0.0.0/8:80;443",
+            ":",
+            ":http",
+            "[fd00::/8",
+            "[fd00::/8]443",
+            "[fd00::/8]:",
+        ] {
+            let err = parse(&[("deny", value)])
+                .err()
+                .unwrap_or_else(|| panic!("{value:?} should be invalid"));
+            assert!(
+                err.starts_with(&format!("KEY=deny VALUE={value} ERROR=")),
                 "{err}"
             );
         }

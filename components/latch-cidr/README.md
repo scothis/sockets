@@ -2,7 +2,7 @@
 
 Socket latch that uses CIDR ranges to grant or deny traffic originating in either direction based on the remote address. Return traffic is not restricted.
 
-A composition of `latch-cidr-egress` and `latch-cidr-ingress`, aggregated with `latch-n2`. Both latches read the same wasi:config/store, so the same ranges, `default` and `reason` apply to outbound traffic the guest originates and inbound traffic remote peers originate. See the component READMEs for the config format and how each direction is checked.
+A composition of `latch-cidr-egress` and `latch-cidr-ingress`, aggregated with `latch-n2`. Both latches read the same wasi:config/store, so the same ranges, `default` and `reason` apply to outbound traffic the guest originates and inbound traffic remote peers originate. Ranges may include a port range, which matches the remote port for outbound traffic and the guest's local port for inbound traffic, so a rule like `10.0.0.0/8:8080` refers to the service on port 8080 in both directions. See the component READMEs for the config format, how each direction is checked, the exact rule precedence, and security considerations.
 
 ```
 default=deny

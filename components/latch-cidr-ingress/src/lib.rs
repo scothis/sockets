@@ -20,6 +20,15 @@ macro_rules! critical {
     };
 }
 
+macro_rules! warn {
+    ($dst:expr, $($arg:tt)*) => {
+        log(Level::Warn, "componentized-latch", &format!($dst, $($arg)*));
+    };
+    ($dst:expr) => {
+        log(Level::Warn, "componentized-latch", &format!($dst));
+    };
+}
+
 const LATCH_NAME: &str = "latch-cidr-ingress";
 
 struct CidrIngressLatch {}
@@ -32,16 +41,23 @@ fn load() -> Result<Ranges, ErrorCode> {
             wasi::config::store::Error::Io(message) => format!("ERROR=io: {message}"),
         })
         .and_then(Ranges::parse)
+        .inspect(|ranges| {
+            // accepted, but likely mistakes
+            for warning in ranges.warnings() {
+                warn!("Config issue LATCH={LATCH_NAME} {warning}");
+            }
+        })
         .map_err(|message| {
             critical!("Invalid config LATCH={LATCH_NAME} {message}");
             ErrorCode::InvalidConfig(LATCH_NAME.to_string())
         })
 }
 
-/// Decide whether traffic originating from the remote address may reach the guest. Return
-/// traffic from an established peer is abstained without consulting the ranges.
+/// Decide whether traffic originating from the remote address may reach the guest's local
+/// address. Return traffic from an established peer is abstained without consulting the ranges.
 fn authorize(
     remote_address: Result<IpSocketAddress, SocketErrorCode>,
+    local_address: Result<IpSocketAddress, SocketErrorCode>,
     established: bool,
 ) -> Result<Decision, ErrorCode> {
     // config is loaded once, an invalid config fails every authorization
@@ -53,11 +69,15 @@ fn authorize(
     if established {
         return Ok(Decision::Abstained);
     }
-    match remote_address {
-        Ok(remote_address) => Ok(match ranges.action(ip_addr(remote_address)) {
-            Action::Deny => Decision::Denied(sockets_error_code(ranges.reason())),
-            Action::Abstain => Decision::Abstained,
-        }),
+    // inbound traffic matches the guest's local port it is sent to, the remote port is usually
+    // an ephemeral port chosen by the peer
+    match remote_address.and_then(|remote_address| Ok((remote_address, local_address?))) {
+        Ok((remote_address, local_address)) => Ok(
+            match ranges.action(ip_addr(remote_address), port(local_address)) {
+                Action::Deny => Decision::Denied(sockets_error_code(ranges.reason())),
+                Action::Abstain => Decision::Abstained,
+            },
+        ),
         Err(err) => Ok(Decision::Denied(SocketsErrorCode::Other(Some(
             err.to_string().to_kebab_case(),
         )))),
@@ -89,11 +109,14 @@ fn sockets_error_code(reason: &Reason) -> SocketsErrorCode {
 }
 
 fn socket_addr(address: IpSocketAddress) -> SocketAddr {
-    let port = match address {
+    SocketAddr::new(ip_addr(address), port(address))
+}
+
+fn port(address: IpSocketAddress) -> u16 {
+    match address {
         IpSocketAddress::Ipv4(ipv4) => ipv4.port,
         IpSocketAddress::Ipv6(ipv6) => ipv6.port,
-    };
-    SocketAddr::new(ip_addr(address), port)
+    }
 }
 
 fn ip_addr(address: IpSocketAddress) -> IpAddr {
@@ -126,9 +149,11 @@ impl Latch for CidrIngressLatch {
         match operation {
             // tcp traffic originates from a peer when it connects to a listening socket, receiving
             // on a connection the guest opened is return traffic
-            Operation::TcpSocket(TcpSocketOperation::ListenConnection((tcp_socket,))) => {
-                authorize(tcp_socket.get_remote_address(), false)
-            }
+            Operation::TcpSocket(TcpSocketOperation::ListenConnection((tcp_socket,))) => authorize(
+                tcp_socket.get_remote_address(),
+                tcp_socket.get_local_address(),
+                false,
+            ),
             Operation::UdpSocket(UdpSocketOperation::Receive((
                 udp_socket,
                 udp_socket_receive_returns,
@@ -138,7 +163,11 @@ impl Latch for CidrIngressLatch {
                     udp_socket.get_local_address().ok().map(socket_addr),
                     socket_addr(remote_address),
                 );
-                authorize(Ok(remote_address), established)
+                authorize(
+                    Ok(remote_address),
+                    udp_socket.get_local_address(),
+                    established,
+                )
             }
             _ => Ok(Decision::Abstained),
         }

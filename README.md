@@ -56,7 +56,7 @@ Control which host names can be resolved, and tie connections to names that were
 
 #### Network ranges
 
-Restrict which remote addresses traffic can originate from or be sent to, by CIDR range, while allowing return traffic.
+Restrict which remote addresses traffic can originate from or be sent to, by CIDR range and optionally port range, while allowing return traffic.
 
 - [`latch-cidr`](./components/latch-cidr/): restricts traffic originating in either direction
 - [`latch-cidr-egress`](./components/latch-cidr-egress/): restricts outbound traffic the guest originates

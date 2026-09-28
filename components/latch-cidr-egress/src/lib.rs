@@ -20,6 +20,15 @@ macro_rules! critical {
     };
 }
 
+macro_rules! warn {
+    ($dst:expr, $($arg:tt)*) => {
+        log(Level::Warn, "componentized-latch", &format!($dst, $($arg)*));
+    };
+    ($dst:expr) => {
+        log(Level::Warn, "componentized-latch", &format!($dst));
+    };
+}
+
 const LATCH_NAME: &str = "latch-cidr-egress";
 
 struct CidrEgressLatch {}
@@ -32,6 +41,12 @@ fn load() -> Result<Ranges, ErrorCode> {
             wasi::config::store::Error::Io(message) => format!("ERROR=io: {message}"),
         })
         .and_then(Ranges::parse)
+        .inspect(|ranges| {
+            // accepted, but likely mistakes
+            for warning in ranges.warnings() {
+                warn!("Config issue LATCH={LATCH_NAME} {warning}");
+            }
+        })
         .map_err(|message| {
             critical!("Invalid config LATCH={LATCH_NAME} {message}");
             ErrorCode::InvalidConfig(LATCH_NAME.to_string())
@@ -54,10 +69,13 @@ fn authorize(
         return Ok(Decision::Abstained);
     }
     match remote_address {
-        Ok(remote_address) => Ok(match ranges.action(ip_addr(remote_address)) {
-            Action::Deny => Decision::Denied(sockets_error_code(ranges.reason())),
-            Action::Abstain => Decision::Abstained,
-        }),
+        // outbound traffic matches the remote port it is sent to
+        Ok(remote_address) => Ok(
+            match ranges.action(ip_addr(remote_address), port(remote_address)) {
+                Action::Deny => Decision::Denied(sockets_error_code(ranges.reason())),
+                Action::Abstain => Decision::Abstained,
+            },
+        ),
         Err(err) => Ok(Decision::Denied(SocketsErrorCode::Other(Some(
             err.to_string().to_kebab_case(),
         )))),
@@ -88,11 +106,14 @@ fn sockets_error_code(reason: &Reason) -> SocketsErrorCode {
 }
 
 fn socket_addr(address: IpSocketAddress) -> SocketAddr {
-    let port = match address {
+    SocketAddr::new(ip_addr(address), port(address))
+}
+
+fn port(address: IpSocketAddress) -> u16 {
+    match address {
         IpSocketAddress::Ipv4(ipv4) => ipv4.port,
         IpSocketAddress::Ipv6(ipv6) => ipv6.port,
-    };
-    SocketAddr::new(ip_addr(address), port)
+    }
 }
 
 fn ip_addr(address: IpSocketAddress) -> IpAddr {
