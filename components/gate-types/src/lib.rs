@@ -13,7 +13,7 @@ use crate::{
         IpSocketAddress, TcpSocket, UdpSocket,
     },
     wasi::{
-        logging::logging::{log, Level},
+        logging::logging::{Level, log},
         sockets::types,
     },
 };
@@ -146,7 +146,9 @@ impl GuestTcpSocket for GatedTcpSocket {
     #[allow(async_fn_in_trait)]
     fn bind(&self, local_address: IpSocketAddress) -> Result<(), ErrorCode> {
         let call_summary = || {
-            format!("OPERATION=wasi:sockets/types#tcp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}")
+            format!(
+                "OPERATION=wasi:sockets/types#tcp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}"
+            )
         };
         match authorize(&Operation::TcpSocket(TcpSocketOperation::Bind((
             &self.socket,
@@ -756,7 +758,9 @@ impl GuestUdpSocket for GatedUdpSocket {
     #[allow(async_fn_in_trait)]
     fn bind(&self, local_address: IpSocketAddress) -> Result<(), ErrorCode> {
         let call_summary = || {
-            format!("OPERATION=wasi:sockets/types#udp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}")
+            format!(
+                "OPERATION=wasi:sockets/types#udp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}"
+            )
         };
         match authorize(&Operation::UdpSocket(UdpSocketOperation::Bind((
             &self.socket,

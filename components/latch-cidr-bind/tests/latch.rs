@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use test_harness::{ip_socket_address, loopback, ErrorCode, Harness, IpAddressFamily, LogEntry};
+use test_harness::{ErrorCode, Harness, IpAddressFamily, LogEntry, ip_socket_address, loopback};
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
 

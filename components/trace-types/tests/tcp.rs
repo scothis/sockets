@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use test_harness::{
-    collect, ip_socket_address, loopback, socket_addr, Harness, IpAddressFamily, LogEntry,
+    Harness, IpAddressFamily, LogEntry, collect, ip_socket_address, loopback, socket_addr,
 };
 use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
@@ -140,11 +140,15 @@ async fn listen_forwards_connections() -> wasmtime::Result<()> {
             ),
             LogEntry::trace(
                 "componentized-trace",
-                format!("OPERATION=wasi:sockets/types#tcp-socket.get-local-address SOCKET={local_address}<--")
+                format!(
+                    "OPERATION=wasi:sockets/types#tcp-socket.get-local-address SOCKET={local_address}<--"
+                )
             ),
             LogEntry::trace(
                 "componentized-trace",
-                format!("OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={local_address}<->{remote_address}")
+                format!(
+                    "OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={local_address}<->{remote_address}"
+                )
             ),
         ]
     );

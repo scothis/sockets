@@ -7,7 +7,7 @@ use crate::{
         IpSocketAddress, TcpSocket, UdpSocket,
     },
     wasi::{
-        logging::logging::{log, Level},
+        logging::logging::{Level, log},
         sockets::types,
     },
 };
@@ -100,7 +100,9 @@ impl GuestTcpSocket for TracedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=bind&sektion=2&format=html>"]
     #[allow(async_fn_in_trait)]
     fn bind(&self, local_address: IpSocketAddress) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#tcp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}");
+        trace!(
+            "OPERATION=wasi:sockets/types#tcp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}"
+        );
         self.socket.bind(local_address)
     }
 
@@ -140,7 +142,9 @@ impl GuestTcpSocket for TracedTcpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?connect>"]
     #[allow(async_fn_in_trait)]
     async fn connect(&self, remote_address: IpSocketAddress) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#tcp-socket.connect SOCKET={self} REMOTE-ADDRESS={remote_address}");
+        trace!(
+            "OPERATION=wasi:sockets/types#tcp-socket.connect SOCKET={self} REMOTE-ADDRESS={remote_address}"
+        );
         self.socket.connect(remote_address).await
     }
 
@@ -376,7 +380,9 @@ impl GuestTcpSocket for TracedTcpSocket {
     #[doc = "/ - `invalid-state`:        (set) The socket is in the `connecting` or `connected` state."]
     #[allow(async_fn_in_trait)]
     fn set_listen_backlog_size(&self, value: u64) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-listen-backlog-size SOCKET={self} VALUE={value}");
+        trace!(
+            "OPERATION=wasi:sockets/types#tcp-socket.set-listen-backlog-size SOCKET={self} VALUE={value}"
+        );
         self.socket.set_listen_backlog_size(value)
     }
 
@@ -398,7 +404,9 @@ impl GuestTcpSocket for TracedTcpSocket {
 
     #[allow(async_fn_in_trait)]
     fn set_keep_alive_enabled(&self, value: bool) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-enabled SOCKET={self} VALUE={value}");
+        trace!(
+            "OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-enabled SOCKET={self} VALUE={value}"
+        );
         self.socket.set_keep_alive_enabled(value)
     }
 
@@ -422,7 +430,9 @@ impl GuestTcpSocket for TracedTcpSocket {
 
     #[allow(async_fn_in_trait)]
     fn set_keep_alive_idle_time(&self, value: Duration) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-idle-time SOCKET={self} VALUE={value}");
+        trace!(
+            "OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-idle-time SOCKET={self} VALUE={value}"
+        );
         self.socket.set_keep_alive_idle_time(value)
     }
 
@@ -445,7 +455,9 @@ impl GuestTcpSocket for TracedTcpSocket {
 
     #[allow(async_fn_in_trait)]
     fn set_keep_alive_interval(&self, value: Duration) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-interval SOCKET={self} VALUE={value}");
+        trace!(
+            "OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-interval SOCKET={self} VALUE={value}"
+        );
         self.socket.set_keep_alive_interval(value)
     }
 
@@ -469,7 +481,9 @@ impl GuestTcpSocket for TracedTcpSocket {
 
     #[allow(async_fn_in_trait)]
     fn set_keep_alive_count(&self, value: u32) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-count SOCKET={self} VALUE={value}");
+        trace!(
+            "OPERATION=wasi:sockets/types#tcp-socket.set-keep-alive-count SOCKET={self} VALUE={value}"
+        );
         self.socket.set_keep_alive_count(value)
     }
 
@@ -520,7 +534,9 @@ impl GuestTcpSocket for TracedTcpSocket {
 
     #[allow(async_fn_in_trait)]
     fn set_receive_buffer_size(&self, value: u64) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-receive-buffer-size SOCKET={self} VALUE={value}");
+        trace!(
+            "OPERATION=wasi:sockets/types#tcp-socket.set-receive-buffer-size SOCKET={self} VALUE={value}"
+        );
         self.socket.set_receive_buffer_size(value)
     }
 
@@ -532,7 +548,9 @@ impl GuestTcpSocket for TracedTcpSocket {
 
     #[allow(async_fn_in_trait)]
     fn set_send_buffer_size(&self, value: u64) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#tcp-socket.set-send-buffer-size SOCKET={self} VALUE={value}");
+        trace!(
+            "OPERATION=wasi:sockets/types#tcp-socket.set-send-buffer-size SOCKET={self} VALUE={value}"
+        );
         self.socket.set_send_buffer_size(value)
     }
 }
@@ -591,7 +609,9 @@ impl GuestUdpSocket for TracedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?query=bind&sektion=2&format=html>"]
     #[allow(async_fn_in_trait)]
     fn bind(&self, local_address: IpSocketAddress) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#udp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}");
+        trace!(
+            "OPERATION=wasi:sockets/types#udp-socket.bind SOCKET={self} LOCAL-ADDRESS={local_address}"
+        );
         self.socket.bind(local_address)
     }
 
@@ -633,7 +653,9 @@ impl GuestUdpSocket for TracedUdpSocket {
     #[doc = "/ - <https://man.freebsd.org/cgi/man.cgi?connect>"]
     #[allow(async_fn_in_trait)]
     fn connect(&self, remote_address: IpSocketAddress) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#udp-socket.connect SOCKET={self} REMOTE-ADDRESS={remote_address}");
+        trace!(
+            "OPERATION=wasi:sockets/types#udp-socket.connect SOCKET={self} REMOTE-ADDRESS={remote_address}"
+        );
         self.socket.connect(remote_address)
     }
 
@@ -807,7 +829,9 @@ impl GuestUdpSocket for TracedUdpSocket {
 
     #[allow(async_fn_in_trait)]
     fn set_unicast_hop_limit(&self, value: u8) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#udp-socket.set-unicast-hop-limit SOCKET={self} VALUE={value}");
+        trace!(
+            "OPERATION=wasi:sockets/types#udp-socket.set-unicast-hop-limit SOCKET={self} VALUE={value}"
+        );
         self.socket.set_unicast_hop_limit(value)
     }
 
@@ -832,7 +856,9 @@ impl GuestUdpSocket for TracedUdpSocket {
 
     #[allow(async_fn_in_trait)]
     fn set_receive_buffer_size(&self, value: u64) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#udp-socket.set-recieve-buffer-size SOCKET={self} VALUE={value}");
+        trace!(
+            "OPERATION=wasi:sockets/types#udp-socket.set-recieve-buffer-size SOCKET={self} VALUE={value}"
+        );
         self.socket.set_receive_buffer_size(value)
     }
 
@@ -844,7 +870,9 @@ impl GuestUdpSocket for TracedUdpSocket {
 
     #[allow(async_fn_in_trait)]
     fn set_send_buffer_size(&self, value: u64) -> Result<(), ErrorCode> {
-        trace!("OPERATION=wasi:sockets/types#udp-socket.set-send-buffer-size SOCKET={self} VALUE={value}");
+        trace!(
+            "OPERATION=wasi:sockets/types#udp-socket.set-send-buffer-size SOCKET={self} VALUE={value}"
+        );
         self.socket.set_send_buffer_size(value)
     }
 }

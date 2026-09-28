@@ -4,8 +4,8 @@ use test_harness::bindings::componentized::sockets::latch::{
     Decision, ErrorCode as LatchErrorCode,
 };
 use test_harness::{
-    collect, ip_socket_address, loopback, resolve, socket_addr, stream, ErrorCode, Harness,
-    HostLatch, IpAddressFamily, LogEntry, Observation,
+    ErrorCode, Harness, HostLatch, IpAddressFamily, LogEntry, Observation, collect,
+    ip_socket_address, loopback, resolve, socket_addr, stream,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -184,10 +184,12 @@ async fn connect_denied_by_latch_component() -> wasmtime::Result<()> {
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(
-            "componentized-gate",format!(
-            "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.connect SOCKET=--- REMOTE-ADDRESS={}",
-            listener.local_addr()?
-        ))]
+            "componentized-gate",
+            format!(
+                "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.connect SOCKET=--- REMOTE-ADDRESS={}",
+                listener.local_addr()?
+            )
+        )]
     );
     Ok(())
 }
@@ -224,7 +226,9 @@ async fn listen_denied() -> wasmtime::Result<()> {
         gate.recorder().logs(),
         vec![LogEntry::warn(
             "componentized-gate",
-            format!("Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={local_address}<--")
+            format!(
+                "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={local_address}<--"
+            )
         )]
     );
     Ok(())
@@ -302,15 +306,18 @@ async fn listen_connection_denied() -> wasmtime::Result<()> {
             Ok((socket_addr(address), client.local_addr()?))
         })
         .await?;
-    assert!(gate
-        .recorder()
-        .operations()
-        .contains(&"tcp-socket.listen.connection".to_string()));
+    assert!(
+        gate.recorder()
+            .operations()
+            .contains(&"tcp-socket.listen.connection".to_string())
+    );
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(
             "componentized-gate",
-            format!("Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={local_address}<->{remote_address}")
+            format!(
+                "Denied REASON=access-denied OPERATION=wasi:sockets/types#tcp-socket.listen SOCKET={local_address}<->{remote_address}"
+            )
         )]
     );
     Ok(())

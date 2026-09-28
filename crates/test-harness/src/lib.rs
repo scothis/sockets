@@ -18,15 +18,15 @@ use std::task::Poll;
 use tokio::sync::mpsc;
 use tokio::sync::oneshot;
 use wac_graph::{
-    types::{Package, Types},
     CompositionGraph, EncodeOptions,
+    types::{Package, Types},
 };
 use wasmtime::component::{
     Accessor, Component, FutureConsumer, FutureReader, HasSelf, Lift, Linker, Lower, ResourceTable,
     Source, StreamConsumer, StreamReader, StreamResult,
 };
 use wasmtime::error::Context as _;
-use wasmtime::{bail, format_err, Config, Engine, Result, Store, StoreContextMut};
+use wasmtime::{Config, Engine, Result, Store, StoreContextMut, bail, format_err};
 use wasmtime_wasi::{WasiCtx, WasiCtxBuilder, WasiCtxView, WasiView};
 
 use crate::bindings::componentized::sockets::latch::{

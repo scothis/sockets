@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use test_harness::bindings::componentized::sockets::latch::{Decision, SocketsErrorCode};
 use test_harness::{
-    collect, ip_socket_address, loopback, socket_addr, stream, ErrorCode, Harness, HostLatch,
-    IpAddressFamily, LogEntry, Observation,
+    ErrorCode, Harness, HostLatch, IpAddressFamily, LogEntry, Observation, collect,
+    ip_socket_address, loopback, socket_addr, stream,
 };
 use tokio::io::AsyncReadExt;
 use tokio::net::{TcpListener, TcpStream, UdpSocket};

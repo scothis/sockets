@@ -10,9 +10,9 @@
 //! with `--export-table`.
 
 use core::cell::RefCell;
-use core::future::{poll_fn, Future};
-use core::pin::pin;
+use core::future::{Future, poll_fn};
 use core::pin::Pin;
+use core::pin::pin;
 use core::task::{Poll, Waker};
 
 struct Executor {

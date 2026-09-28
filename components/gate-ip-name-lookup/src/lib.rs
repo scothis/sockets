@@ -9,7 +9,7 @@ use crate::{
     },
     exports::wasi::sockets::ip_name_lookup::{ErrorCode, Guest},
     wasi::{
-        logging::logging::{log, Level},
+        logging::logging::{Level, log},
         sockets::{ip_name_lookup, types},
     },
 };

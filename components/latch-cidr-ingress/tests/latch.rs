@@ -2,8 +2,8 @@ use std::time::Duration;
 
 use test_harness::bindings::componentized::sockets::latch::{Decision, SocketsErrorCode};
 use test_harness::{
-    collect, ip_socket_address, loopback, socket_addr, stream, ErrorCode, Harness, HostLatch,
-    IpAddressFamily, LogEntry, Observation,
+    ErrorCode, Harness, HostLatch, IpAddressFamily, LogEntry, Observation, collect,
+    ip_socket_address, loopback, socket_addr, stream,
 };
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
@@ -528,7 +528,7 @@ async fn tcp_inbound_connection_denied_to_matching_local_port() -> wasmtime::Res
         .await?;
     gate.run(async |accessor, gate| {
         let tcp = gate.wasi_sockets_types().tcp_socket();
-        let mut listen = async |port| -> wasmtime::Result<_> {
+        let listen = async |port| -> wasmtime::Result<_> {
             let socket = tcp
                 .call_create(accessor, IpAddressFamily::Ipv4)
                 .await?

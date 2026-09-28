@@ -1,6 +1,6 @@
 use std::time::Duration;
 
-use test_harness::{ip_socket_address, loopback, socket_addr, Harness, IpAddressFamily, LogEntry};
+use test_harness::{Harness, IpAddressFamily, LogEntry, ip_socket_address, loopback, socket_addr};
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
 
@@ -102,15 +102,21 @@ async fn connect_traced() -> wasmtime::Result<()> {
             ),
             LogEntry::trace(
                 "componentized-trace",
-                format!("OPERATION=wasi:sockets/types#udp-socket.get-remote-address SOCKET={local_address}<->{remote_address}")
+                format!(
+                    "OPERATION=wasi:sockets/types#udp-socket.get-remote-address SOCKET={local_address}<->{remote_address}"
+                )
             ),
             LogEntry::trace(
                 "componentized-trace",
-                format!("OPERATION=wasi:sockets/types#udp-socket.get-local-address SOCKET={local_address}<->{remote_address}")
+                format!(
+                    "OPERATION=wasi:sockets/types#udp-socket.get-local-address SOCKET={local_address}<->{remote_address}"
+                )
             ),
             LogEntry::trace(
                 "componentized-trace",
-                format!("OPERATION=wasi:sockets/types#udp-socket.disconnect SOCKET={local_address}<->{remote_address}")
+                format!(
+                    "OPERATION=wasi:sockets/types#udp-socket.disconnect SOCKET={local_address}<->{remote_address}"
+                )
             ),
         ]
     );
@@ -155,18 +161,26 @@ async fn send_traced() -> wasmtime::Result<()> {
         trace.recorder().logs(),
         vec![
             LogEntry::trace(
-            "componentized-trace","OPERATION=wasi:sockets/types#udp-socket.create ADDRESS-FAMILY=IPv4"),
+                "componentized-trace",
+                "OPERATION=wasi:sockets/types#udp-socket.create ADDRESS-FAMILY=IPv4"
+            ),
             LogEntry::trace(
-            "componentized-trace",
+                "componentized-trace",
                 "OPERATION=wasi:sockets/types#udp-socket.bind SOCKET=--- LOCAL-ADDRESS=127.0.0.1:0"
             ),
             LogEntry::trace(
-            "componentized-trace",format!("OPERATION=wasi:sockets/types#udp-socket.get-local-address SOCKET={local_address}<--")),
+                "componentized-trace",
+                format!(
+                    "OPERATION=wasi:sockets/types#udp-socket.get-local-address SOCKET={local_address}<--"
+                )
+            ),
             LogEntry::trace(
-            "componentized-trace",format!(
-                "OPERATION=wasi:sockets/types#udp-socket.send SOCKET={local_address}<-- DATA-LENGTH=5 REMOTE-ADDRESS=some<{}>",
-                peer.local_addr()?
-            )),
+                "componentized-trace",
+                format!(
+                    "OPERATION=wasi:sockets/types#udp-socket.send SOCKET={local_address}<-- DATA-LENGTH=5 REMOTE-ADDRESS=some<{}>",
+                    peer.local_addr()?
+                )
+            ),
         ]
     );
     Ok(())
@@ -255,11 +269,15 @@ async fn receive_traced() -> wasmtime::Result<()> {
             ),
             LogEntry::trace(
                 "componentized-trace",
-                format!("OPERATION=wasi:sockets/types#udp-socket.get-local-address SOCKET={local_address}<--")
+                format!(
+                    "OPERATION=wasi:sockets/types#udp-socket.get-local-address SOCKET={local_address}<--"
+                )
             ),
             LogEntry::trace(
                 "componentized-trace",
-                format!("OPERATION=wasi:sockets/types#udp-socket.receive SOCKET={local_address}<--")
+                format!(
+                    "OPERATION=wasi:sockets/types#udp-socket.receive SOCKET={local_address}<--"
+                )
             ),
         ]
     );

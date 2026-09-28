@@ -4,8 +4,8 @@ use test_harness::bindings::componentized::sockets::latch::{
     Decision, ErrorCode as LatchErrorCode, SocketsErrorCode,
 };
 use test_harness::{
-    ip_socket_address, loopback, socket_addr, ErrorCode, Harness, HostLatch, IpAddressFamily,
-    LogEntry,
+    ErrorCode, Harness, HostLatch, IpAddressFamily, LogEntry, ip_socket_address, loopback,
+    socket_addr,
 };
 use tokio::net::UdpSocket;
 use tokio::time::timeout;
@@ -157,10 +157,12 @@ async fn connect_denied_by_latch_component() -> wasmtime::Result<()> {
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(
-            "componentized-gate",format!(
-            "Denied REASON=access-denied OPERATION=wasi:sockets/types#udp-socket.connect SOCKET=--- REMOTE-ADDRESS={}",
-            peer.local_addr()?
-        ))]
+            "componentized-gate",
+            format!(
+                "Denied REASON=access-denied OPERATION=wasi:sockets/types#udp-socket.connect SOCKET=--- REMOTE-ADDRESS={}",
+                peer.local_addr()?
+            )
+        )]
     );
     Ok(())
 }
@@ -249,10 +251,12 @@ async fn send_denied() -> wasmtime::Result<()> {
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(
-            "componentized-gate",format!(
-            "Denied REASON=access-denied OPERATION=wasi:sockets/types#udp-socket.send SOCKET={local_address}<-- DATA-LENGTH=5 REMOTE-ADDRESS=some<{}>",
-            peer.local_addr()?
-        ))]
+            "componentized-gate",
+            format!(
+                "Denied REASON=access-denied OPERATION=wasi:sockets/types#udp-socket.send SOCKET={local_address}<-- DATA-LENGTH=5 REMOTE-ADDRESS=some<{}>",
+                peer.local_addr()?
+            )
+        )]
     );
     Ok(())
 }
@@ -344,10 +348,12 @@ async fn receive_denied() -> wasmtime::Result<()> {
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::warn(
-            "componentized-gate",format!(
-            "Denied REASON=access-denied OPERATION=wasi:sockets/types#udp-socket.receive SOCKET={local_address}<-- DATA-LENGTH=5 REMOTE-ADDRESS={}",
-            peer.local_addr()?
-        ))]
+            "componentized-gate",
+            format!(
+                "Denied REASON=access-denied OPERATION=wasi:sockets/types#udp-socket.receive SOCKET={local_address}<-- DATA-LENGTH=5 REMOTE-ADDRESS={}",
+                peer.local_addr()?
+            )
+        )]
     );
     Ok(())
 }
@@ -393,10 +399,12 @@ async fn receive_latch_error() -> wasmtime::Result<()> {
     assert_eq!(
         gate.recorder().logs(),
         vec![LogEntry::error(
-            "componentized-gate",format!(
-            "Latch error CODE=boom OPERATION=wasi:sockets/types#udp-socket.receive SOCKET={local_address}<-- DATA-LENGTH=5 REMOTE-ADDRESS={}",
-            peer.local_addr()?
-        ))]
+            "componentized-gate",
+            format!(
+                "Latch error CODE=boom OPERATION=wasi:sockets/types#udp-socket.receive SOCKET={local_address}<-- DATA-LENGTH=5 REMOTE-ADDRESS={}",
+                peer.local_addr()?
+            )
+        )]
     );
     Ok(())
 }

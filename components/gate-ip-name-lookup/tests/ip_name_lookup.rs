@@ -16,9 +16,11 @@ async fn resolve_addresses_abstained() -> wasmtime::Result<()> {
     assert!(!addresses.is_empty());
     let operations = gate.recorder().operations();
     assert_eq!(operations[0], "ip-name-lookup.resolve-addresses");
-    assert!(operations[1..]
-        .iter()
-        .all(|op| op == "ip-name-lookup.resolve-addresses.return"));
+    assert!(
+        operations[1..]
+            .iter()
+            .all(|op| op == "ip-name-lookup.resolve-addresses.return")
+    );
     assert_eq!(gate.recorder().logs(), vec![]);
     Ok(())
 }
@@ -101,8 +103,10 @@ async fn resolve_addresses_decisions_are_observed() -> wasmtime::Result<()> {
             denied: false,
         }
     );
-    assert!(observations[1..]
-        .iter()
-        .all(|o| o.operation == "ip-name-lookup.resolve-addresses.return" && !o.denied));
+    assert!(
+        observations[1..]
+            .iter()
+            .all(|o| o.operation == "ip-name-lookup.resolve-addresses.return" && !o.denied)
+    );
     Ok(())
 }

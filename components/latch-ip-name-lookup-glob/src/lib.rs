@@ -5,7 +5,7 @@ use std::path::Path;
 use crate::exports::componentized::sockets::latch::{
     Decision, ErrorCode, Guest as Latch, IpNameLookupOperation, Operation, SocketsErrorCode,
 };
-use crate::wasi::logging::logging::{log, Level};
+use crate::wasi::logging::logging::{Level, log};
 
 macro_rules! critical {
     ($dst:expr, $($arg:tt)*) => {

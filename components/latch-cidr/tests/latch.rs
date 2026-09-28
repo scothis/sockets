@@ -4,7 +4,7 @@
 use std::time::Duration;
 
 use test_harness::{
-    collect, ip_socket_address, loopback, socket_addr, ErrorCode, Harness, IpAddressFamily,
+    ErrorCode, Harness, IpAddressFamily, collect, ip_socket_address, loopback, socket_addr,
 };
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 use tokio::time::timeout;

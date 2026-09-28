@@ -11,8 +11,8 @@ use test_harness::bindings::componentized::sockets::latch::{
 use test_harness::bindings::exports::wasi::sockets::ip_name_lookup::ErrorCode as LookupErrorCode;
 use test_harness::bindings::wasi::sockets::types::IpAddress;
 use test_harness::{
-    ip_socket_address, loopback, ErrorCode, Harness, HostLatch, IpAddressFamily, LogEntry,
-    Observation,
+    ErrorCode, Harness, HostLatch, IpAddressFamily, LogEntry, Observation, ip_socket_address,
+    loopback,
 };
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::time::timeout;
@@ -261,8 +261,8 @@ async fn lookup_decided_by_aggregated_latch_component() -> wasmtime::Result<()> 
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn tcp_connect_denied_when_lookup_denied_by_aggregated_latch_component(
-) -> wasmtime::Result<()> {
+async fn tcp_connect_denied_when_lookup_denied_by_aggregated_latch_component()
+-> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 

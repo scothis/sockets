@@ -8,7 +8,7 @@ use crate::exports::componentized::sockets::latch::{
     Decision, ErrorCode, Guest as Latch, Operation, SocketsErrorCode, TcpSocketOperation,
     UdpSocketOperation,
 };
-use crate::wasi::logging::logging::{log, Level};
+use crate::wasi::logging::logging::{Level, log};
 use crate::wasi::sockets::types::{ErrorCode as SocketErrorCode, IpSocketAddress};
 
 macro_rules! critical {
