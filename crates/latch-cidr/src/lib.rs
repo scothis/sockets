@@ -1,7 +1,7 @@
 //! CIDR range matching shared by the `latch-cidr-egress` and `latch-cidr-ingress` components.
 //!
-//! This crate has no component bindings, latches map [`Action`] and [`Reason`] to their own
-//! generated types.
+//! Without the `latch` feature this crate has no component bindings. With it, [`Reason`] converts
+//! to the latch's sockets error code and [`Ranges::decision`] returns the latch's decision.
 
 use std::collections::{BTreeSet, HashMap};
 use std::net::{IpAddr, SocketAddr};
@@ -301,6 +301,35 @@ impl Ranges {
     /// `KEY=<key> VALUE=<value> DETAIL=<warning>`.
     pub fn warnings(&self) -> &[String] {
         &self.warnings
+    }
+}
+
+#[cfg(feature = "latch")]
+mod latch {
+    use std::net::IpAddr;
+
+    use sockets_latch::{Decision, SocketsErrorCode};
+
+    use crate::{Action, Ranges, Reason};
+
+    impl From<&Reason> for SocketsErrorCode {
+        fn from(reason: &Reason) -> SocketsErrorCode {
+            match reason {
+                Reason::AccessDenied => SocketsErrorCode::AccessDenied,
+                Reason::InvalidArgument => SocketsErrorCode::InvalidArgument,
+                Reason::Other(message) => SocketsErrorCode::Other(message.clone()),
+            }
+        }
+    }
+
+    impl Ranges {
+        /// The latch decision for the address and port, denials are reported with the reason.
+        pub fn decision(&self, address: IpAddr, port: u16) -> Decision {
+            match self.action(address, port) {
+                Action::Deny => Decision::Denied(self.reason().into()),
+                Action::Abstain => Decision::Abstained,
+            }
+        }
     }
 }
 

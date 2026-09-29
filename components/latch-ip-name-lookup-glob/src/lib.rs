@@ -1,20 +1,9 @@
 use glob::{MatchOptions, Pattern};
-use std::cell::RefCell;
 use std::path::Path;
 
-use crate::exports::componentized::sockets::latch::{
-    Decision, ErrorCode, Guest as Latch, IpNameLookupOperation, Operation, SocketsErrorCode,
+use sockets_latch::{
+    Decision, ErrorCode, IpNameLookupOperation, Latch, Local, Operation, SocketsErrorCode,
 };
-use crate::wasi::logging::logging::{Level, log};
-
-macro_rules! critical {
-    ($dst:expr, $($arg:tt)*) => {
-        log(Level::Critical, "componentized-latch", &format!($dst, $($arg)*));
-    };
-    ($dst:expr) => {
-        log(Level::Critical, "componentized-latch", &format!($dst));
-    };
-}
 
 const LATCH_NAME: &str = "latch-ip-name-lookup-glob";
 
@@ -107,18 +96,7 @@ struct Patterns {
 impl Patterns {
     /// Load the patterns from config, logging why when the config is invalid.
     fn load() -> Result<Patterns, ErrorCode> {
-        wasi::config::store::get_all()
-            .map_err(|err| match err {
-                wasi::config::store::Error::Upstream(message) => {
-                    format!("ERROR=upstream: {message}")
-                }
-                wasi::config::store::Error::Io(message) => format!("ERROR=io: {message}"),
-            })
-            .and_then(Patterns::parse)
-            .map_err(|message| {
-                critical!("Invalid config LATCH={LATCH_NAME} {message}");
-                ErrorCode::InvalidConfig(LATCH_NAME.to_string())
-            })
+        sockets_latch::load_config(LATCH_NAME, Patterns::parse)
     }
 
     fn parse(config: Vec<(String, String)>) -> Result<Patterns, String> {
@@ -156,7 +134,7 @@ impl Patterns {
 
     fn authorize(name: String) -> Result<Decision, ErrorCode> {
         // config is loaded once, an invalid config fails every authorization
-        match STATE.0.borrow_mut().get_or_insert_with(Patterns::load) {
+        match STATE.borrow_mut().get_or_insert_with(Patterns::load) {
             Ok(patterns) => Ok(patterns.decide(name)),
             Err(err) => Err(err.clone()),
         }
@@ -187,12 +165,7 @@ impl Patterns {
 }
 
 /// `None` until the config is loaded.
-struct State(RefCell<Option<Result<Patterns, ErrorCode>>>);
-
-// components are single threaded, and a component is not reentered while it is running
-unsafe impl Sync for State {}
-
-static STATE: State = State(RefCell::new(None));
+static STATE: Local<Option<Result<Patterns, ErrorCode>>> = Local::new(None);
 
 impl Latch for GlobIpNameLookupLatch {
     fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
@@ -223,14 +196,7 @@ fn get_error_code(value: String) -> Option<SocketsErrorCode> {
     }
 }
 
-wit_bindgen::generate!({
-    path: "../wit",
-    world: "sockets-latch",
-    merge_structurally_equal_types: true,
-    generate_all
-});
-
-export!(GlobIpNameLookupLatch);
+sockets_latch::export!(GlobIpNameLookupLatch with_types_in sockets_latch::bindings);
 
 #[cfg(test)]
 mod tests {

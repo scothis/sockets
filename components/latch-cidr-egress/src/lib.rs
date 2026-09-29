@@ -1,133 +1,62 @@
-use std::cell::RefCell;
-use std::net::{IpAddr, SocketAddr};
+use std::net::SocketAddr;
 
-use heck::ToKebabCase;
-use latch_cidr::{Action, Peers, Ranges, Reason};
-
-use crate::exports::componentized::sockets::latch::{
-    Decision, ErrorCode, Guest as Latch, Operation, SocketsErrorCode, TcpSocketOperation,
-    UdpSocketOperation,
+use latch_cidr::{Peers, Ranges};
+use sockets_latch::{
+    Decision, ErrorCode, IpSocketAddress, Latch, Local, Operation, TcpSocketOperation,
+    UdpSocketOperation, WasiErrorCode, socket_error_reason,
 };
-use crate::wasi::logging::logging::{Level, log};
-use crate::wasi::sockets::types::{ErrorCode as SocketErrorCode, IpSocketAddress};
-
-macro_rules! critical {
-    ($dst:expr, $($arg:tt)*) => {
-        log(Level::Critical, "componentized-latch", &format!($dst, $($arg)*));
-    };
-    ($dst:expr) => {
-        log(Level::Critical, "componentized-latch", &format!($dst));
-    };
-}
-
-macro_rules! warn {
-    ($dst:expr, $($arg:tt)*) => {
-        log(Level::Warn, "componentized-latch", &format!($dst, $($arg)*));
-    };
-    ($dst:expr) => {
-        log(Level::Warn, "componentized-latch", &format!($dst));
-    };
-}
 
 const LATCH_NAME: &str = "latch-cidr-egress";
 
 struct CidrEgressLatch {}
 
-/// Load the ranges from config, logging why when the config is invalid.
+/// Load the ranges from config, logging why when the config is invalid, and warnings for likely
+/// mistakes.
 fn load() -> Result<Ranges, ErrorCode> {
-    wasi::config::store::get_all()
-        .map_err(|err| match err {
-            wasi::config::store::Error::Upstream(message) => format!("ERROR=upstream: {message}"),
-            wasi::config::store::Error::Io(message) => format!("ERROR=io: {message}"),
-        })
-        .and_then(Ranges::parse)
-        .inspect(|ranges| {
-            // accepted, but likely mistakes
-            for warning in ranges.warnings() {
-                warn!("Config issue LATCH={LATCH_NAME} {warning}");
-            }
-        })
-        .map_err(|message| {
-            critical!("Invalid config LATCH={LATCH_NAME} {message}");
-            ErrorCode::InvalidConfig(LATCH_NAME.to_string())
-        })
+    sockets_latch::load_config(LATCH_NAME, Ranges::parse).inspect(|ranges| {
+        for warning in ranges.warnings() {
+            sockets_latch::warn!("Config issue LATCH={LATCH_NAME} {warning}");
+        }
+    })
+}
+
+/// The ranges, loaded once, an invalid config fails every authorization.
+fn with_ranges(f: impl FnOnce(&Ranges) -> Decision) -> Result<Decision, ErrorCode> {
+    match STATE.borrow_mut().ranges.get_or_insert_with(load) {
+        Ok(ranges) => Ok(f(ranges)),
+        Err(err) => Err(err.clone()),
+    }
 }
 
 /// Decide whether traffic may originate to the remote address. Return traffic to an established
 /// peer is abstained without consulting the ranges.
 fn authorize(
-    remote_address: Result<IpSocketAddress, SocketErrorCode>,
+    remote_address: Result<IpSocketAddress, WasiErrorCode>,
     established: bool,
 ) -> Result<Decision, ErrorCode> {
-    // config is loaded once, an invalid config fails every authorization
-    let mut ranges = STATE.ranges.borrow_mut();
-    let ranges = match ranges.get_or_insert_with(load) {
-        Ok(ranges) => ranges,
-        Err(err) => return Err(err.clone()),
-    };
-    if established {
-        return Ok(Decision::Abstained);
-    }
-    match remote_address {
-        // outbound traffic matches the remote port it is sent to
-        Ok(remote_address) => Ok(
-            match ranges.action(ip_addr(remote_address), port(remote_address)) {
-                Action::Deny => Decision::Denied(sockets_error_code(ranges.reason())),
-                Action::Abstain => Decision::Abstained,
-            },
-        ),
-        Err(err) => Ok(Decision::Denied(SocketsErrorCode::Other(Some(
-            err.to_string().to_kebab_case(),
-        )))),
-    }
+    with_ranges(|ranges| {
+        if established {
+            return Decision::Abstained;
+        }
+        match remote_address.map(SocketAddr::from) {
+            // outbound traffic matches the remote port it is sent to
+            Ok(remote_address) => ranges.decision(remote_address.ip(), remote_address.port()),
+            Err(err) => Decision::Denied(socket_error_reason(err)),
+        }
+    })
 }
 
 struct State {
     /// `None` until the config is loaded.
-    ranges: RefCell<Option<Result<Ranges, ErrorCode>>>,
+    ranges: Option<Result<Ranges, ErrorCode>>,
     /// Peers udp sockets have received datagrams from, sending back to them is return traffic.
-    udp_peers: RefCell<Peers>,
+    udp_peers: Peers,
 }
 
-// components are single threaded, and a component is not reentered while it is running
-unsafe impl Sync for State {}
-
-static STATE: State = State {
-    ranges: RefCell::new(None),
-    udp_peers: RefCell::new(Peers::new()),
-};
-
-fn sockets_error_code(reason: &Reason) -> SocketsErrorCode {
-    match reason {
-        Reason::AccessDenied => SocketsErrorCode::AccessDenied,
-        Reason::InvalidArgument => SocketsErrorCode::InvalidArgument,
-        Reason::Other(message) => SocketsErrorCode::Other(message.clone()),
-    }
-}
-
-fn socket_addr(address: IpSocketAddress) -> SocketAddr {
-    SocketAddr::new(ip_addr(address), port(address))
-}
-
-fn port(address: IpSocketAddress) -> u16 {
-    match address {
-        IpSocketAddress::Ipv4(ipv4) => ipv4.port,
-        IpSocketAddress::Ipv6(ipv6) => ipv6.port,
-    }
-}
-
-fn ip_addr(address: IpSocketAddress) -> IpAddr {
-    match address {
-        IpSocketAddress::Ipv4(ipv4) => {
-            let (a, b, c, d) = ipv4.address;
-            IpAddr::from([a, b, c, d])
-        }
-        IpSocketAddress::Ipv6(ipv6) => {
-            let (a, b, c, d, e, f, g, h) = ipv6.address;
-            IpAddr::from([a, b, c, d, e, f, g, h])
-        }
-    }
-}
+static STATE: Local<State> = Local::new(State {
+    ranges: None,
+    udp_peers: Peers::new(),
+});
 
 impl Latch for CidrEgressLatch {
     fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
@@ -143,9 +72,9 @@ impl Latch for CidrEgressLatch {
                     None => udp_socket.get_remote_address(),
                 };
                 let established = match (&remote_address, udp_socket.get_local_address()) {
-                    (Ok(remote_address), Ok(local_address)) => STATE.udp_peers.borrow().contains(
-                        Some(socket_addr(local_address)),
-                        socket_addr(*remote_address),
+                    (Ok(remote_address), Ok(local_address)) => STATE.borrow().udp_peers.contains(
+                        Some(SocketAddr::from(local_address)),
+                        SocketAddr::from(*remote_address),
                     ),
                     _ => false,
                 };
@@ -168,9 +97,9 @@ impl Latch for CidrEgressLatch {
         {
             // a socket that received a datagram is bound
             if let Ok(local_address) = udp_socket.get_local_address() {
-                STATE.udp_peers.borrow_mut().record(
-                    Some(socket_addr(local_address)),
-                    socket_addr(udp_socket_receive_returns.remote_address),
+                STATE.borrow_mut().udp_peers.record(
+                    Some(SocketAddr::from(local_address)),
+                    SocketAddr::from(udp_socket_receive_returns.remote_address),
                 );
             }
         }
@@ -178,11 +107,4 @@ impl Latch for CidrEgressLatch {
     }
 }
 
-wit_bindgen::generate!({
-    path: "../wit",
-    world: "sockets-latch",
-    merge_structurally_equal_types: true,
-    generate_all
-});
-
-export!(CidrEgressLatch);
+sockets_latch::export!(CidrEgressLatch with_types_in sockets_latch::bindings);

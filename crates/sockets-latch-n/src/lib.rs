@@ -1,4 +1,7 @@
-use crate::bindings::exports::componentized::sockets::latch::{Decision, ErrorCode, Operation};
+pub use crate::bindings::exports::componentized::sockets::latch::{
+    Decision, ErrorCode, Guest as Latch, Operation,
+};
+pub use crate::bindings::{latch0, latch1, latch2, latch3, latch4};
 
 pub fn authorize(
     operation: Operation,

@@ -1,7 +1,5 @@
-use latch_n::bindings::exports::componentized::sockets::latch::{
-    Decision, ErrorCode, Guest as Latch, Operation,
-};
-use latch_n::bindings::{latch0, latch1, latch2, latch3, latch4};
+use sockets_latch_n::{Decision, ErrorCode, Latch, Operation};
+use sockets_latch_n::{latch0, latch1, latch2, latch3, latch4};
 
 struct LatchN5 {}
 
@@ -15,7 +13,7 @@ impl Latch for LatchN5 {
             latch3::authorize,
             latch4::authorize,
         ];
-        latch_n::authorize(operation, authorizers)
+        sockets_latch_n::authorize(operation, authorizers)
     }
 
     fn observe_decision(
@@ -29,8 +27,8 @@ impl Latch for LatchN5 {
             latch3::observe_decision,
             latch4::observe_decision,
         ];
-        latch_n::observe_decision(final_decision, operation, observers)
+        sockets_latch_n::observe_decision(final_decision, operation, observers)
     }
 }
 
-latch_n::export!(LatchN5 with_types_in latch_n::bindings);
+sockets_latch_n::export!(LatchN5 with_types_in sockets_latch_n::bindings);

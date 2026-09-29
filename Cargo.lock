@@ -938,7 +938,7 @@ dependencies = [
 name = "latch-abstain-all"
 version = "0.1.0"
 dependencies = [
- "wit-bindgen",
+ "sockets-latch",
 ]
 
 [[package]]
@@ -946,6 +946,7 @@ name = "latch-cidr"
 version = "0.1.0"
 dependencies = [
  "ipnet",
+ "sockets-latch",
 ]
 
 [[package]]
@@ -953,34 +954,32 @@ name = "latch-cidr-bind"
 version = "0.1.0"
 dependencies = [
  "latch-cidr",
+ "sockets-latch",
  "test-harness",
  "tokio",
  "wasmtime",
- "wit-bindgen",
 ]
 
 [[package]]
 name = "latch-cidr-egress"
 version = "0.1.0"
 dependencies = [
- "heck",
  "latch-cidr",
+ "sockets-latch",
  "test-harness",
  "tokio",
  "wasmtime",
- "wit-bindgen",
 ]
 
 [[package]]
 name = "latch-cidr-ingress"
 version = "0.1.0"
 dependencies = [
- "heck",
  "latch-cidr",
+ "sockets-latch",
  "test-harness",
  "tokio",
  "wasmtime",
- "wit-bindgen",
 ]
 
 [[package]]
@@ -996,94 +995,92 @@ dependencies = [
 name = "latch-delegate-tcp"
 version = "0.1.0"
 dependencies = [
+ "sockets-latch",
  "test-harness",
  "tokio",
  "wasmtime",
- "wit-bindgen",
 ]
 
 [[package]]
 name = "latch-delegate-udp"
 version = "0.1.0"
 dependencies = [
+ "sockets-latch",
  "test-harness",
  "tokio",
  "wasmtime",
- "wit-bindgen",
 ]
 
 [[package]]
 name = "latch-deny-all"
 version = "0.1.0"
 dependencies = [
+ "sockets-latch",
  "test-harness",
  "tokio",
  "wasmtime",
- "wit-bindgen",
 ]
 
 [[package]]
 name = "latch-deny-bind"
 version = "0.1.0"
 dependencies = [
- "wit-bindgen",
+ "sockets-latch",
 ]
 
 [[package]]
 name = "latch-deny-connect"
 version = "0.1.0"
 dependencies = [
- "wit-bindgen",
+ "sockets-latch",
 ]
 
 [[package]]
 name = "latch-deny-connect-unless-lookup-address"
 version = "0.1.0"
 dependencies = [
+ "sockets-latch",
  "test-harness",
  "tokio",
  "wasmtime",
- "wit-bindgen",
 ]
 
 [[package]]
 name = "latch-deny-ipv4"
 version = "0.1.0"
 dependencies = [
- "heck",
- "wit-bindgen",
+ "sockets-latch",
 ]
 
 [[package]]
 name = "latch-deny-ipv6"
 version = "0.1.0"
 dependencies = [
- "heck",
- "wit-bindgen",
+ "sockets-latch",
 ]
 
 [[package]]
 name = "latch-deny-tcp"
 version = "0.1.0"
 dependencies = [
- "wit-bindgen",
+ "sockets-latch",
 ]
 
 [[package]]
 name = "latch-deny-udp"
 version = "0.1.0"
 dependencies = [
- "wit-bindgen",
+ "sockets-latch",
 ]
 
 [[package]]
 name = "latch-dry-run"
 version = "0.1.0"
 dependencies = [
+ "sockets-latch",
  "test-harness",
  "tokio",
  "wasmtime",
- "wit-bindgen",
 ]
 
 [[package]]
@@ -1091,45 +1088,38 @@ name = "latch-ip-name-lookup-glob"
 version = "0.1.0"
 dependencies = [
  "glob",
+ "sockets-latch",
  "test-harness",
  "tokio",
  "wasmtime",
- "wit-bindgen",
-]
-
-[[package]]
-name = "latch-n"
-version = "0.1.0"
-dependencies = [
- "wit-bindgen",
 ]
 
 [[package]]
 name = "latch-n2"
 version = "0.1.0"
 dependencies = [
- "latch-n",
+ "sockets-latch-n",
 ]
 
 [[package]]
 name = "latch-n3"
 version = "0.1.0"
 dependencies = [
- "latch-n",
+ "sockets-latch-n",
 ]
 
 [[package]]
 name = "latch-n4"
 version = "0.1.0"
 dependencies = [
- "latch-n",
+ "sockets-latch-n",
 ]
 
 [[package]]
 name = "latch-n5"
 version = "0.1.0"
 dependencies = [
- "latch-n",
+ "sockets-latch-n",
 ]
 
 [[package]]
@@ -1601,6 +1591,21 @@ checksum = "c3d1e2c7f27f8d4cb10542a02c49005dbd6e93095799d6f3be745fae9f8fedd4"
 dependencies = [
  "libc",
  "windows-sys 0.61.2",
+]
+
+[[package]]
+name = "sockets-latch"
+version = "0.1.0"
+dependencies = [
+ "heck",
+ "wit-bindgen",
+]
+
+[[package]]
+name = "sockets-latch-n"
+version = "0.1.0"
+dependencies = [
+ "wit-bindgen",
 ]
 
 [[package]]

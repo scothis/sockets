@@ -1,10 +1,7 @@
-use heck::ToKebabCase;
-
-use crate::exports::componentized::sockets::latch::{
-    Decision, ErrorCode, Guest as Latch, IpNameLookupOperation, Operation, SocketsErrorCode,
-    TcpSocketOperation, UdpSocketOperation,
+use sockets_latch::{
+    Decision, ErrorCode, IpAddress, IpAddressFamily, IpNameLookupOperation, IpSocketAddress, Latch,
+    Operation, SocketsErrorCode, TcpSocketOperation, UdpSocketOperation, socket_error_reason,
 };
-use crate::wasi::sockets::types::{IpAddress, IpAddressFamily, IpSocketAddress};
 
 struct DenyIPv6Latch {}
 
@@ -52,9 +49,7 @@ impl Latch for DenyIPv6Latch {
                         Ok(IpSocketAddress::Ipv6(_)) => {
                             Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                         }
-                        Err(error_code) => Ok(Decision::Denied(SocketsErrorCode::Other(Some(
-                            error_code.to_string().to_kebab_case(),
-                        )))),
+                        Err(error_code) => Ok(Decision::Denied(socket_error_reason(error_code))),
                     }
                 }
                 TcpSocketOperation::Send(_) => Ok(Decision::Abstained),
@@ -112,11 +107,4 @@ impl Latch for DenyIPv6Latch {
     }
 }
 
-wit_bindgen::generate!({
-    path: "../wit",
-    world: "sockets-latch",
-    merge_structurally_equal_types: true,
-    generate_all
-});
-
-export!(DenyIPv6Latch);
+sockets_latch::export!(DenyIPv6Latch with_types_in sockets_latch::bindings);

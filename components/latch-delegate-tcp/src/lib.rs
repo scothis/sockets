@@ -1,7 +1,5 @@
-use crate::componentized::sockets::latch;
-use crate::exports::componentized::sockets::latch::{
-    Decision, ErrorCode, Guest as Latch, Operation,
-};
+use sockets_latch::wrapped as latch;
+use sockets_latch::{Decision, ErrorCode, Latch, Operation};
 
 struct DelegateTcpLatch {}
 
@@ -27,11 +25,4 @@ impl Latch for DelegateTcpLatch {
     }
 }
 
-wit_bindgen::generate!({
-    path: "../wit",
-    world: "sockets-latch",
-    merge_structurally_equal_types: true,
-    generate_all
-});
-
-export!(DelegateTcpLatch);
+sockets_latch::export!(DelegateTcpLatch with_types_in sockets_latch::bindings);

@@ -8,4 +8,4 @@ license = "Apache-2.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-latch-n = { workspace = true }
+sockets-latch-n = { workspace = true }

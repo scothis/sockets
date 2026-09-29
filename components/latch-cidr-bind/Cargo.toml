@@ -8,8 +8,8 @@ license = "Apache-2.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-latch-cidr = { workspace = true }
-wit-bindgen = { workspace = true }
+latch-cidr = { workspace = true, features = ["latch"] }
+sockets-latch = { workspace = true }
 
 [dev-dependencies]
 test-harness = { workspace = true }

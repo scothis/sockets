@@ -8,4 +8,4 @@ license = "Apache-2.0"
 crate-type = ["cdylib"]
 
 [dependencies]
-wit-bindgen = { workspace = true }
+sockets-latch = { workspace = true }

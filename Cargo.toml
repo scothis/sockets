@@ -12,7 +12,8 @@ componentized-rt = { path = "./crates/componentized-rt" }
 heck = "0.5"
 ipnet = "2"
 latch-cidr = { path = "./crates/latch-cidr" }
-latch-n = { path = "./crates/latch-n" }
+sockets-latch = { path = "./crates/sockets-latch" }
+sockets-latch-n = { path = "./crates/sockets-latch-n" }
 test-harness = { path = "./crates/test-harness" }
 tokio = { version = "1", features = ["macros", "rt-multi-thread", "net", "io-util", "sync", "time"] }
 wac-graph = "0.11"

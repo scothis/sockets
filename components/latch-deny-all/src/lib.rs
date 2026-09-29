@@ -1,6 +1,4 @@
-use crate::exports::componentized::sockets::latch::{
-    Decision, ErrorCode, Guest as Latch, Operation, SocketsErrorCode,
-};
+use sockets_latch::{Decision, ErrorCode, Latch, Operation, SocketsErrorCode};
 
 struct DenyAllLatch {}
 
@@ -15,11 +13,4 @@ impl Latch for DenyAllLatch {
     }
 }
 
-wit_bindgen::generate!({
-    path: "../wit",
-    world: "sockets-latch",
-    merge_structurally_equal_types: true,
-    generate_all
-});
-
-export!(DenyAllLatch);
+sockets_latch::export!(DenyAllLatch with_types_in sockets_latch::bindings);
