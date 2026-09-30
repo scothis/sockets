@@ -85,14 +85,13 @@ Log wasi:sockets calls and latch decisions, for debugging or auditing, without a
 
 Prereqs:
 - a rust toolchain
-- [`static-config`](https://github.com/componentized/static-config)
-- [`wasm-tools`](https://github.com/bytecodealliance/wasm-tools)
-- [`wac`](https://github.com/bytecodealliance/wac)
-- [`wkg`](https://github.com/bytecodealliance/wasm-pkg-tools)
+- [`cargo-binstall`](https://github.com/cargo-bins/cargo-binstall), optional, to download prebuilt tools instead of building them
 
 ```sh
 make components
 ```
+
+The cli tools the build uses, [`static-config`](https://github.com/componentized/static-config), [`wasm-tools`](https://github.com/bytecodealliance/wasm-tools), [`wac`](https://github.com/bytecodealliance/wac) and [`wkg`](https://github.com/bytecodealliance/wasm-pkg-tools), are pinned in [`tools/Cargo.toml`](./tools/Cargo.toml) and installed into `target/tools` as needed, or ahead of time with `make tools`. Dependabot bumps the pinned versions.
 
 ## Community
 

@@ -17,14 +17,11 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v2
       - name: Install cargo binstall
         uses: cargo-bins/cargo-binstall@main
-      - name: Install static-config
-        run: cargo binstall --force static-config
-      - name: Install wac
-        run: cargo binstall --force wac-cli
-      - name: Install wkg
-        run: cargo binstall --force wkg
-      - name: Install wasm-tools
-        run: cargo binstall --force wasm-tools
+      - name: Install tools
+        # the versions pinned in tools/Cargo.toml, on the path for later steps
+        run: |
+          make tools
+          echo "${PWD}/target/tools/bin" >> "${GITHUB_PATH}"
       - name: Sync wit
         run: make wit
       - name: Check for drift in generated wit
@@ -65,10 +62,10 @@ jobs:
       - uses: actions-rust-lang/setup-rust-toolchain@v2
       - name: Install cargo binstall
         uses: cargo-bins/cargo-binstall@main
-      - name: Install wkg
-        run: cargo binstall --force wkg
-      - name: Install wasm-tools
-        run: cargo binstall --force wasm-tools
+      - name: Install tools
+        run: |
+          make tools
+          echo "${PWD}/target/tools/bin" >> "${GITHUB_PATH}"
       - name: Install cosign
         uses: sigstore/cosign-installer@v4.1.2
       - name: Download components.tar
