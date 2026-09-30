@@ -26,7 +26,7 @@ use heck::ToKebabCase;
 pub mod bindings {
     wit_bindgen::generate!({
         path: "../../components/wit",
-        world: "sockets-latch",
+        world: "latch",
         pub_export_macro: true,
         merge_structurally_equal_types: true,
         generate_all

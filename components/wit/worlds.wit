@@ -16,14 +16,14 @@ world gated-types {
     export wasi:sockets/types@0.3.0;
 }
 
-world sockets-latch {
+world latch {
     import wasi:logging/logging@0.1.0-draft;
     import wasi:config/store@0.2.0-rc.1;
     import componentized:sockets/latch@0.1.0-dev;
     export componentized:sockets/latch@0.1.0-dev;
 }
 
-world sockets-latch-n {
+world latch-n {
     export componentized:sockets/latch@0.1.0-dev;
     import latch0: componentized:sockets/latch@0.1.0-dev;
     import latch1: componentized:sockets/latch@0.1.0-dev;
