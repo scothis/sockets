@@ -32,6 +32,9 @@ Put wasi:sockets behind a latch. Each operation is authorized before it reaches 
 - [`gate-types`](./components/gate-types/): gates tcp and udp sockets
 - [`gate-ip-name-lookup`](./components/gate-ip-name-lookup/): gates ip-name-lookup
 
+> [!CAUTION]
+> Interfering with network sockets can have dramatic, unintended consequences. A denied operation surfaces to the guest as a network failure, and dropped inbound traffic looks like a peer that never answers, which can trigger retries, timeouts and fallbacks far from the operation that was denied. A policy that looks correct can still cut off traffic a component depends on, for example name lookups or return traffic. Install new latches, and new configurations of existing latches, cautiously and monitor the result: roll out with [`latch-dry-run`](./components/latch-dry-run/), watch decisions with [`latch-trace`](./components/latch-trace/), and review the denials the gate logs.
+
 ### Latches
 
 Decide which socket operations are allowed. A latch abstains or denies, an operation proceeds unless a latch denies it.
