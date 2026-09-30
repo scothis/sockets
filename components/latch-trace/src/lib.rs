@@ -30,7 +30,7 @@ struct DisplayDecision<'a>(&'a Decision);
 impl fmt::Display for DisplayDecision<'_> {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self.0 {
-            Decision::Abstained => f.write_str("DECISION=abstained"),
+            Decision::Deferred => f.write_str("DECISION=deferred"),
             Decision::Denied(reason) => write!(f, "DECISION=denied REASON={reason}"),
         }
     }

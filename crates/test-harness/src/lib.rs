@@ -295,19 +295,19 @@ pub struct HostLatch {
 }
 
 impl HostLatch {
-    /// Abstain from every operation.
-    pub fn abstain() -> Self {
-        Self::new(|_| Ok(Decision::Abstained))
+    /// Defer every operation.
+    pub fn defer() -> Self {
+        Self::new(|_| Ok(Decision::Deferred))
     }
 
-    /// Deny the named operations with `access-denied`, abstain from the rest.
+    /// Deny the named operations with `access-denied`, defer the rest.
     pub fn deny(operations: &[&str]) -> Self {
         let operations: Vec<String> = operations.iter().map(|s| s.to_string()).collect();
         Self::new(move |auth| {
             if operations.contains(&auth.operation) {
                 Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
             } else {
-                Ok(Decision::Abstained)
+                Ok(Decision::Deferred)
             }
         })
     }
@@ -545,7 +545,7 @@ impl Harness {
         self
     }
 
-    /// Replace the default abstaining host latch, it is aggregated with any latch components.
+    /// Replace the default deferring host latch, it is aggregated with any latch components.
     pub fn host_latch(mut self, latch: HostLatch) -> Self {
         self.host_latch = Some(latch);
         self
@@ -592,7 +592,7 @@ impl Harness {
             Ctx {
                 wasi,
                 table: ResourceTable::new(),
-                latch: self.host_latch.unwrap_or_else(HostLatch::abstain),
+                latch: self.host_latch.unwrap_or_else(HostLatch::defer),
                 config: self.config,
                 recorder: recorder.clone(),
             },

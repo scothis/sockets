@@ -1,6 +1,6 @@
 # `latch-delegate-udp`
 
-Sockets latch that wraps another latch, delegating only udp socket operations to it. Tcp socket and ip-name-lookup operations are abstained without consulting the wrapped latch, it neither authorizes nor observes them.
+Sockets latch that wraps another latch, delegating only udp socket operations to it. Tcp socket and ip-name-lookup operations are deferred without consulting the wrapped latch, it neither authorizes nor observes them.
 
 Wrapping lets latches that apply to several kinds of operations be configured separately for each. For example, `latch-cidr-egress` restricts both tcp and udp traffic, to use different ranges for each, wrap one instance with `latch-delegate-tcp` and another with `latch-delegate-udp`, give each its own config, and aggregate them with `latch-n2`:
 

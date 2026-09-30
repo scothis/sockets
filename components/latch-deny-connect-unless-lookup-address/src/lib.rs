@@ -26,7 +26,7 @@ struct DenyConnectUnlessLookUpAddressLatch {}
 
 fn known_address(remote_address: IpSocketAddress) -> Result<Decision, ErrorCode> {
     match is_known_address(remote_address) {
-        true => Ok(Decision::Abstained),
+        true => Ok(Decision::Deferred),
         false => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
     }
 }
@@ -38,7 +38,7 @@ impl Latch for DenyConnectUnlessLookUpAddressLatch {
                 TcpSocketOperation::Connect((_, tcp_socket_connect_args)) => {
                     known_address(tcp_socket_connect_args.remote_address)
                 }
-                _ => Ok(Decision::Abstained),
+                _ => Ok(Decision::Deferred),
             },
             Operation::UdpSocket(udp_socket_operation) => match udp_socket_operation {
                 UdpSocketOperation::Connect((_, udp_socket_connect_args)) => {
@@ -47,19 +47,19 @@ impl Latch for DenyConnectUnlessLookUpAddressLatch {
                 UdpSocketOperation::Send((_, udp_socket_send_args)) => {
                     match udp_socket_send_args.remote_address {
                         Some(remote_address) => known_address(remote_address),
-                        None => Ok(Decision::Abstained),
+                        None => Ok(Decision::Deferred),
                     }
                 }
-                _ => Ok(Decision::Abstained),
+                _ => Ok(Decision::Deferred),
             },
-            _ => Ok(Decision::Abstained),
+            _ => Ok(Decision::Deferred),
         }
     }
 
     fn observe_decision(final_decision: Decision, operation: Operation) -> Result<(), ErrorCode> {
         // an address is known once the final decision allows it to be returned to the guest
         if let (
-            Decision::Abstained,
+            Decision::Deferred,
             Operation::IpNameLookup(IpNameLookupOperation::ResolveAddressesReturn(
                 ResolveAddressesReturnsItem { ip_address },
             )),

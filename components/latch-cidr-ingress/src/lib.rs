@@ -29,7 +29,7 @@ fn with_ranges(f: impl FnOnce(&Ranges) -> Decision) -> Result<Decision, ErrorCod
 }
 
 /// Decide whether traffic originating from the remote address may reach the guest's local
-/// address. Return traffic from an established peer is abstained without consulting the ranges.
+/// address. Return traffic from an established peer is deferred without consulting the ranges.
 fn authorize(
     remote_address: Result<IpSocketAddress, WasiErrorCode>,
     local_address: Result<IpSocketAddress, WasiErrorCode>,
@@ -37,7 +37,7 @@ fn authorize(
 ) -> Result<Decision, ErrorCode> {
     with_ranges(|ranges| {
         if established {
-            return Decision::Abstained;
+            return Decision::Deferred;
         }
         // inbound traffic matches the guest's local port it is sent to, the remote port is
         // usually an ephemeral port chosen by the peer
@@ -101,14 +101,14 @@ impl Latch for CidrIngressLatch {
                     established,
                 )
             }
-            _ => Ok(Decision::Abstained),
+            _ => Ok(Decision::Deferred),
         }
     }
 
     fn observe_decision(final_decision: Decision, operation: Operation) -> Result<(), ErrorCode> {
         // only a send or connect the final decision allows reaches the peer, a denial from any
         // latch means datagrams from the peer are not return traffic
-        let Decision::Abstained = final_decision else {
+        let Decision::Deferred = final_decision else {
             return Ok(());
         };
         match operation {

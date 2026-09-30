@@ -34,10 +34,10 @@ async fn tcp_connect_denied_without_lookup() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
-    // aggregated with the host latch, which abstains from everything
+    // aggregated with the host latch, which defers everything
     let mut gate = Harness::new("gate")
         .latch(LATCH)
-        .host_latch(HostLatch::abstain())
+        .host_latch(HostLatch::defer())
         .build()
         .await?;
     let result = gate
@@ -87,7 +87,7 @@ async fn tcp_connect_denied_without_lookup() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn tcp_connect_abstained_after_lookup() -> wasmtime::Result<()> {
+async fn tcp_connect_deferred_after_lookup() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
@@ -132,7 +132,7 @@ async fn tcp_connect_denied_to_address_filtered_from_lookup() -> wasmtime::Resul
             {
                 Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
             } else {
-                Ok(Decision::Abstained)
+                Ok(Decision::Deferred)
             }
         }))
         .build()
@@ -172,7 +172,7 @@ async fn aggregated_latch_denial_passes_through() -> wasmtime::Result<()> {
             if auth.operation == "tcp-socket.connect" {
                 Ok(Decision::Denied(SocketsErrorCode::InvalidArgument))
             } else {
-                Ok(Decision::Abstained)
+                Ok(Decision::Deferred)
             }
         }))
         .build()
@@ -203,7 +203,7 @@ async fn aggregated_latch_error_passes_through() -> wasmtime::Result<()> {
             if auth.operation == "ip-name-lookup.resolve-addresses" {
                 Err(LatchErrorCode::Other(Some("boom".to_string())))
             } else {
-                Ok(Decision::Abstained)
+                Ok(Decision::Deferred)
             }
         }))
         .build()
@@ -231,7 +231,7 @@ async fn lookup_decided_by_aggregated_latch_component() -> wasmtime::Result<()> 
         .latch(LATCH)
         .latch("latch-ip-name-lookup-glob")
         .config("default", "deny")
-        .config("abstain", "localhost")
+        .config("defer", "localhost")
         .build()
         .await?;
     let (denied, addresses, result) = gate
@@ -312,7 +312,7 @@ async fn udp_connect_denied_without_lookup() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn udp_connect_and_send_abstained_after_lookup() -> wasmtime::Result<()> {
+async fn udp_connect_and_send_deferred_after_lookup() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 
@@ -382,7 +382,7 @@ async fn udp_send_denied_without_lookup() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn udp_send_abstained_after_lookup() -> wasmtime::Result<()> {
+async fn udp_send_deferred_after_lookup() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 

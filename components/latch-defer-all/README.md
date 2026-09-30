@@ -1,6 +1,6 @@
-# `latch-abstain-all`
+# `latch-defer-all`
 
-Sockets latch that implicitly abstains from all decisions.
+Sockets latch that implicitly defers all decisions.
 
 ## Interfaces
 

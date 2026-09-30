@@ -4,7 +4,7 @@ use wit_bindgen::StreamReader;
 use crate::{
     componentized::sockets::latch::{
         self,
-        Decision::{self, Abstained, Denied},
+        Decision::{self, Deferred, Denied},
         ErrorCode as LatchErrorCode, Operation, SocketsErrorCode, TcpSocketOperation,
         UdpSocketOperation,
     },
@@ -95,7 +95,7 @@ impl GuestTcpSocket for GatedTcpSocket {
                 warn!("Denied REASON={reason} {}", call_summary());
                 Err(reason)?
             }
-            Ok(Abstained) => {
+            Ok(Deferred) => {
                 let socket = types::TcpSocket::create(address_family)?;
                 Ok(TcpSocket::new(GatedTcpSocket::new(socket)))
             }
@@ -158,7 +158,7 @@ impl GuestTcpSocket for GatedTcpSocket {
                 warn!("Denied REASON={reason} {}", call_summary());
                 Err(reason)?
             }
-            Ok(Abstained) => self.socket.bind(local_address).map_err(|val| val.into()),
+            Ok(Deferred) => self.socket.bind(local_address).map_err(|val| val.into()),
             Err(code) => {
                 error!(
                     "Latch error CODE={code} {summary}",
@@ -219,7 +219,7 @@ impl GuestTcpSocket for GatedTcpSocket {
                 warn!("Denied REASON={error_code} {}", call_summary());
                 Err(error_code.into())
             }
-            Ok(Abstained) => self.socket.connect(remote_address).await,
+            Ok(Deferred) => self.socket.connect(remote_address).await,
             Err(code) => {
                 error!(
                     "Latch error CODE={code} {summary}",
@@ -312,7 +312,7 @@ impl GuestTcpSocket for GatedTcpSocket {
                 warn!("Denied REASON={reason} {}", call_summary());
                 Err(reason)?
             }
-            Ok(Abstained) => {
+            Ok(Deferred) => {
                 let mut connections = self.socket.listen()?;
                 let (mut tx, rx) = wit_stream::new::<TcpSocket>();
                 // listen is a sync export, so forward connections from the background executor
@@ -332,7 +332,7 @@ impl GuestTcpSocket for GatedTcpSocket {
                                     call_summary(GatedTcpSocket::new(socket))
                                 );
                             }
-                            Ok(Abstained) => {
+                            Ok(Deferred) => {
                                 let socket = TcpSocket::new(GatedTcpSocket::new(socket));
                                 if tx.write_one(socket).await.is_some() {
                                     // reader dropped, stop accepting connections
@@ -399,7 +399,7 @@ impl GuestTcpSocket for GatedTcpSocket {
                 drop(data);
                 resolved(Err(reason.into()))
             }
-            Ok(Abstained) => self.socket.send(data),
+            Ok(Deferred) => self.socket.send(data),
             Err(code) => {
                 error!(
                     "Latch error CODE={code} {summary}",
@@ -455,7 +455,7 @@ impl GuestTcpSocket for GatedTcpSocket {
                 warn!("Denied REASON={reason} {}", call_summary());
                 (closed_stream(), resolved(Err(reason.into())))
             }
-            Ok(Abstained) => self.socket.receive(),
+            Ok(Deferred) => self.socket.receive(),
             Err(code) => {
                 error!(
                     "Latch error CODE={code} {summary}",
@@ -721,7 +721,7 @@ impl GuestUdpSocket for GatedUdpSocket {
                 warn!("Denied REASON={error_code} {}", call_summary());
                 Err(error_code.into())
             }
-            Ok(Abstained) => {
+            Ok(Deferred) => {
                 let socket = types::UdpSocket::create(address_family)?;
                 Ok(UdpSocket::new(GatedUdpSocket::new(socket)))
             }
@@ -770,7 +770,7 @@ impl GuestUdpSocket for GatedUdpSocket {
                 warn!("Denied REASON={reason} {}", call_summary());
                 Err(reason.into())
             }
-            Ok(Abstained) => self.socket.bind(local_address),
+            Ok(Deferred) => self.socket.bind(local_address),
             Err(code) => {
                 error!(
                     "Latch error CODE={code} {summary}",
@@ -833,7 +833,7 @@ impl GuestUdpSocket for GatedUdpSocket {
                 warn!("Denied REASON={error_code} {}", call_summary());
                 Err(error_code.into())
             }
-            Ok(Abstained) => self.socket.connect(remote_address),
+            Ok(Deferred) => self.socket.connect(remote_address),
             Err(code) => {
                 error!(
                     "Latch error CODE={code} {summary}",
@@ -931,7 +931,7 @@ impl GuestUdpSocket for GatedUdpSocket {
                 warn!("Denied REASON={error_code} {}", call_summary());
                 Err(error_code.into())
             }
-            Ok(Abstained) => self.socket.send(data, remote_address).await,
+            Ok(Deferred) => self.socket.send(data, remote_address).await,
             Err(code) => {
                 error!(
                     "Latch error CODE={code} {summary}",
@@ -989,7 +989,7 @@ impl GuestUdpSocket for GatedUdpSocket {
                 Ok(Denied(error_code)) => {
                     warn!("Denied REASON={error_code} {}", call_summary());
                 }
-                Ok(Abstained) => return Ok((data, remote_address)),
+                Ok(Deferred) => return Ok((data, remote_address)),
                 Err(code) => {
                     error!(
                         "Latch error CODE={code} {summary}",

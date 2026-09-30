@@ -1,8 +1,8 @@
 /// Access control for wasi:sockets.
 ///
-/// A gate consults a latch before performing each socket operation. The latch either abstains,
+/// A gate consults a latch before performing each socket operation. The latch either defers,
 /// raising no objection, or denies the operation. A latch never grants an operation, an
-/// operation proceeds when the latch abstains. Several latches can be aggregated into one, the
+/// operation proceeds when the latch defers. Several latches can be aggregated into one, the
 /// operation is denied when any of them denies it.
 ///
 /// Deciding and acting on a decision are separate steps. `authorize` decides without side
@@ -153,7 +153,7 @@ interface latch {
     @since(version = 0.1.0-dev)
     variant decision {
         /// No objection to the operation.
-        abstained,
+        deferred,
         /// The operation must not proceed. The error code is returned to the caller for
         /// operations that fail. For traffic that is dropped instead, like an accepted connection
         /// or a received datagram, it is only logged.
@@ -203,7 +203,7 @@ interface latch {
 
     /// Observe the final decision for an operation, after `authorize` returned a decision.
     ///
-    /// Called for both abstained and denied operations, including operations this latch was not
+    /// Called for both deferred and denied operations, including operations this latch was not
     /// asked to authorize because an aggregated latch denied them first. The final decision is
     /// what the gate enforces, so this is where a latch updates any state it keeps, for example
     /// remembering peers the caller is allowed to exchange traffic with. Not called when

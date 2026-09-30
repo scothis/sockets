@@ -52,7 +52,7 @@ impl Latch for CidrBindLatch {
             Operation::UdpSocket(UdpSocketOperation::Bind((_, udp_socket_bind_args))) => {
                 authorize(udp_socket_bind_args.local_address)
             }
-            _ => Ok(Decision::Abstained),
+            _ => Ok(Decision::Deferred),
         }
     }
 

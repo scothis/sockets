@@ -9,11 +9,11 @@ impl Latch for DenyIPv4Latch {
     fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
         match operation {
             Operation::IpNameLookup(ip_name_lookup_operation) => match ip_name_lookup_operation {
-                IpNameLookupOperation::ResolveAddresses(_) => Ok(Decision::Abstained),
+                IpNameLookupOperation::ResolveAddresses(_) => Ok(Decision::Deferred),
                 IpNameLookupOperation::ResolveAddressesReturn(resolve_addresses_returns_item) => {
                     match resolve_addresses_returns_item.ip_address {
                         IpAddress::Ipv4(_) => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
-                        IpAddress::Ipv6(_) => Ok(Decision::Abstained),
+                        IpAddress::Ipv6(_) => Ok(Decision::Deferred),
                     }
                 }
             },
@@ -23,7 +23,7 @@ impl Latch for DenyIPv4Latch {
                         IpAddressFamily::Ipv4 => {
                             Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                         }
-                        IpAddressFamily::Ipv6 => Ok(Decision::Abstained),
+                        IpAddressFamily::Ipv6 => Ok(Decision::Deferred),
                     }
                 }
                 TcpSocketOperation::Bind((_, tcp_socket_bind_args)) => {
@@ -31,7 +31,7 @@ impl Latch for DenyIPv4Latch {
                         IpSocketAddress::Ipv4(_) => {
                             Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                         }
-                        IpSocketAddress::Ipv6(_) => Ok(Decision::Abstained),
+                        IpSocketAddress::Ipv6(_) => Ok(Decision::Deferred),
                     }
                 }
                 TcpSocketOperation::Connect((_, tcp_socket_connect_args)) => {
@@ -39,21 +39,21 @@ impl Latch for DenyIPv4Latch {
                         IpSocketAddress::Ipv4(_) => {
                             Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                         }
-                        IpSocketAddress::Ipv6(_) => Ok(Decision::Abstained),
+                        IpSocketAddress::Ipv6(_) => Ok(Decision::Deferred),
                     }
                 }
-                TcpSocketOperation::Listen(_) => Ok(Decision::Abstained),
+                TcpSocketOperation::Listen(_) => Ok(Decision::Deferred),
                 TcpSocketOperation::ListenConnection((tcp_socket,)) => {
                     match tcp_socket.get_remote_address() {
                         Ok(IpSocketAddress::Ipv4(_)) => {
                             Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                         }
-                        Ok(IpSocketAddress::Ipv6(_)) => Ok(Decision::Abstained),
+                        Ok(IpSocketAddress::Ipv6(_)) => Ok(Decision::Deferred),
                         Err(error_code) => Ok(Decision::Denied(socket_error_reason(error_code))),
                     }
                 }
-                TcpSocketOperation::Send(_) => Ok(Decision::Abstained),
-                TcpSocketOperation::Receive(_) => Ok(Decision::Abstained),
+                TcpSocketOperation::Send(_) => Ok(Decision::Deferred),
+                TcpSocketOperation::Receive(_) => Ok(Decision::Deferred),
             },
             Operation::UdpSocket(udp_socket_operation) => match udp_socket_operation {
                 UdpSocketOperation::Create(udp_socket_create_args) => {
@@ -61,7 +61,7 @@ impl Latch for DenyIPv4Latch {
                         IpAddressFamily::Ipv4 => {
                             Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                         }
-                        IpAddressFamily::Ipv6 => Ok(Decision::Abstained),
+                        IpAddressFamily::Ipv6 => Ok(Decision::Deferred),
                     }
                 }
                 UdpSocketOperation::Bind((_, udp_socket_bind_args)) => {
@@ -69,7 +69,7 @@ impl Latch for DenyIPv4Latch {
                         IpSocketAddress::Ipv4(_) => {
                             Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                         }
-                        IpSocketAddress::Ipv6(_) => Ok(Decision::Abstained),
+                        IpSocketAddress::Ipv6(_) => Ok(Decision::Deferred),
                     }
                 }
                 UdpSocketOperation::Connect((_, udp_socket_connect_args)) => {
@@ -77,7 +77,7 @@ impl Latch for DenyIPv4Latch {
                         IpSocketAddress::Ipv4(_) => {
                             Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                         }
-                        IpSocketAddress::Ipv6(_) => Ok(Decision::Abstained),
+                        IpSocketAddress::Ipv6(_) => Ok(Decision::Deferred),
                     }
                 }
                 UdpSocketOperation::Send((_, udp_socket_send_args)) => {
@@ -85,8 +85,8 @@ impl Latch for DenyIPv4Latch {
                         Some(IpSocketAddress::Ipv4(_)) => {
                             Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                         }
-                        Some(IpSocketAddress::Ipv6(_)) => Ok(Decision::Abstained),
-                        None => Ok(Decision::Abstained),
+                        Some(IpSocketAddress::Ipv6(_)) => Ok(Decision::Deferred),
+                        None => Ok(Decision::Deferred),
                     }
                 }
                 UdpSocketOperation::Receive((_, udp_socket_receive_args)) => {
@@ -94,7 +94,7 @@ impl Latch for DenyIPv4Latch {
                         IpSocketAddress::Ipv4(_) => {
                             Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                         }
-                        IpSocketAddress::Ipv6(_) => Ok(Decision::Abstained),
+                        IpSocketAddress::Ipv6(_) => Ok(Decision::Deferred),
                     }
                 }
             },

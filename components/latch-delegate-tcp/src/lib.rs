@@ -12,7 +12,7 @@ impl Latch for DelegateTcpLatch {
     fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
         match is_delegated(&operation) {
             true => latch::authorize(&operation),
-            false => Ok(Decision::Abstained),
+            false => Ok(Decision::Deferred),
         }
     }
 

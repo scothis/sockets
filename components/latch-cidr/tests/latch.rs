@@ -68,7 +68,7 @@ async fn allows_both_directions() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
         .config("default", "deny")
-        .config("abstain", "127.0.0.1")
+        .config("defer", "127.0.0.1")
         .build()
         .await?;
     gate.run(async |accessor, gate| {

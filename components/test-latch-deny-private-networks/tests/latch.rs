@@ -84,7 +84,7 @@ fn denies_addresses_that_are_not_globally_reachable() {
 }
 
 #[test]
-fn abstains_for_globally_reachable_addresses() {
+fn defers_for_globally_reachable_addresses() {
     let ranges = preset();
     for address in [
         "1.1.1.1",
@@ -111,7 +111,7 @@ fn abstains_for_globally_reachable_addresses() {
     ] {
         assert_eq!(
             ranges.action(address.parse().unwrap(), 443),
-            Action::Abstain,
+            Action::Defer,
             "{address}"
         );
     }

@@ -6,10 +6,10 @@ A composition of `latch-cidr-egress` and `latch-cidr-ingress`, aggregated with `
 
 ```
 default=deny
-abstain=192.168.0.0/16
+defer=192.168.0.0/16
 
-connect to 192.168.1.1 -> ABSTAINED
-connection from 192.168.1.1 -> ABSTAINED
+connect to 192.168.1.1 -> DEFERRED
+connection from 192.168.1.1 -> DEFERRED
 connect to 10.1.2.3 -> DENIED
 connection from 10.1.2.3 -> DENIED
 ```

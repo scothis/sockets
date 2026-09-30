@@ -11,7 +11,7 @@ use tokio::net::UdpSocket;
 use tokio::time::timeout;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn create_abstained() -> wasmtime::Result<()> {
+async fn create_deferred() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types").build().await?;
     let result = gate
         .run(async |accessor, gate| {
@@ -104,7 +104,7 @@ async fn bind_denied_by_latch_component() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_abstained() -> wasmtime::Result<()> {
+async fn connect_deferred() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 
@@ -168,7 +168,7 @@ async fn connect_denied_by_latch_component() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn send_abstained() -> wasmtime::Result<()> {
+async fn send_deferred() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 
@@ -262,7 +262,7 @@ async fn send_denied() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn receive_abstained() -> wasmtime::Result<()> {
+async fn receive_deferred() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
 
     let mut gate = Harness::new("gate-types").build().await?;
@@ -307,7 +307,7 @@ async fn receive_denied() -> wasmtime::Result<()> {
                 denied = true;
                 Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
             } else {
-                Ok(Decision::Abstained)
+                Ok(Decision::Deferred)
             }
         }))
         .build()
@@ -367,7 +367,7 @@ async fn receive_latch_error() -> wasmtime::Result<()> {
             if auth.operation == "udp-socket.receive" {
                 Err(LatchErrorCode::Other(Some("boom".to_string())))
             } else {
-                Ok(Decision::Abstained)
+                Ok(Decision::Deferred)
             }
         }))
         .build()

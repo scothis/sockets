@@ -33,8 +33,8 @@ async fn delegates_only_udp_operations() -> wasmtime::Result<()> {
         })
         .await?;
     assert!(!udp, "udp operations are delegated to the wrapped latch");
-    assert!(tcp, "other operations are abstained without delegation");
-    assert!(ip, "other operations are abstained without delegation");
+    assert!(tcp, "other operations are deferred without delegation");
+    assert!(ip, "other operations are deferred without delegation");
     // the wrapped latch neither authorizes nor observes the other operations
     assert_eq!(gate.recorder().operations(), vec!["udp-socket.create"]);
     assert_eq!(

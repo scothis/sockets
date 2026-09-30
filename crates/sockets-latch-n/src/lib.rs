@@ -9,11 +9,11 @@ pub fn authorize(
 ) -> Result<Decision, ErrorCode> {
     for authorize in authorizers {
         match authorize(&operation)? {
-            Decision::Abstained => {}
+            Decision::Deferred => {}
             Decision::Denied(error_code) => return Ok(Decision::Denied(error_code)),
         }
     }
-    Ok(Decision::Abstained)
+    Ok(Decision::Deferred)
 }
 
 /// Pass the final decision to every nested latch, including latches that were not asked to

@@ -3,7 +3,7 @@ use core::{fmt, net};
 use crate::{
     componentized::sockets::latch::{
         self,
-        Decision::{self, Abstained, Denied},
+        Decision::{self, Deferred, Denied},
         ErrorCode as LatchErrorCode, IpNameLookupOperation, Operation, ResolveAddressesArgs,
         ResolveAddressesReturnsItem, SocketsErrorCode,
     },
@@ -83,7 +83,7 @@ impl Guest for GatedIpNameLookup {
                 warn!("Denied REASON={reason} {}", call_summary());
                 Err(reason)?
             }
-            Ok(Abstained) => {
+            Ok(Deferred) => {
                 ip_name_lookup::resolve_addresses(name.clone())
                     .await
                     .map(|addresses| {

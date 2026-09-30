@@ -30,7 +30,7 @@ async fn denies_matching_name() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn abstains_for_unmatched_name() -> wasmtime::Result<()> {
+async fn defers_for_unmatched_name() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-ip-name-lookup")
         .latch("latch-ip-name-lookup-glob")
         .config("deny", "**.example.com")
@@ -79,26 +79,26 @@ async fn denies_with_configured_reason() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn default_deny_abstains_for_matching_name() -> wasmtime::Result<()> {
+async fn default_deny_defers_for_matching_name() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-ip-name-lookup")
         .latch("latch-ip-name-lookup-glob")
         .config("default", "deny")
-        .config("abstain", "localhost")
+        .config("defer", "localhost")
         .build()
         .await?;
-    let (abstained, denied) = gate
+    let (deferred, denied) = gate
         .run(async |accessor, gate| {
             let lookup = gate.wasi_sockets_ip_name_lookup();
-            let abstained = lookup
+            let deferred = lookup
                 .call_resolve_addresses(accessor, "localhost".to_string())
                 .await?;
             let denied = lookup
                 .call_resolve_addresses(accessor, "www.example.com".to_string())
                 .await?;
-            Ok((abstained, denied))
+            Ok((deferred, denied))
         })
         .await?;
-    assert!(!abstained.expect("resolve addresses").is_empty());
+    assert!(!deferred.expect("resolve addresses").is_empty());
     assert!(matches!(denied, Err(ErrorCode::AccessDenied)));
     assert_eq!(
         gate.recorder().logs(),
@@ -114,23 +114,23 @@ async fn default_deny_abstains_for_matching_name() -> wasmtime::Result<()> {
 async fn more_specific_pattern_decides() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-ip-name-lookup")
         .latch("latch-ip-name-lookup-glob")
-        .config("abstain", "localhost")
+        .config("defer", "localhost")
         .config("deny", "**")
         .build()
         .await?;
-    let (abstained, denied) = gate
+    let (deferred, denied) = gate
         .run(async |accessor, gate| {
             let lookup = gate.wasi_sockets_ip_name_lookup();
-            let abstained = lookup
+            let deferred = lookup
                 .call_resolve_addresses(accessor, "localhost".to_string())
                 .await?;
             let denied = lookup
                 .call_resolve_addresses(accessor, "www.example.com".to_string())
                 .await?;
-            Ok((abstained, denied))
+            Ok((deferred, denied))
         })
         .await?;
-    assert!(!abstained.expect("resolve addresses").is_empty());
+    assert!(!deferred.expect("resolve addresses").is_empty());
     assert!(matches!(denied, Err(ErrorCode::AccessDenied)));
     Ok(())
 }
@@ -165,7 +165,7 @@ async fn invalid_config_fails_every_lookup() -> wasmtime::Result<()> {
         vec![
             LogEntry::critical(
                 "componentized-latch",
-                "Invalid config LATCH=latch-ip-name-lookup-glob KEY=default VALUE=grant ERROR=expected 'deny' or 'abstain'"
+                "Invalid config LATCH=latch-ip-name-lookup-glob KEY=default VALUE=grant ERROR=expected 'deny' or 'defer'"
             ),
             LogEntry::error(
                 "componentized-gate",

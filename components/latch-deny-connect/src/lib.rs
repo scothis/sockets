@@ -11,15 +11,15 @@ impl Latch for DenyConnectLatch {
                 TcpSocketOperation::Connect(_) => {
                     Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                 }
-                _ => Ok(Decision::Abstained),
+                _ => Ok(Decision::Deferred),
             },
             Operation::UdpSocket(udp_socket_operation) => match udp_socket_operation {
                 UdpSocketOperation::Connect(_) => {
                     Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
                 }
-                _ => Ok(Decision::Abstained),
+                _ => Ok(Decision::Deferred),
             },
-            _ => Ok(Decision::Abstained),
+            _ => Ok(Decision::Deferred),
         }
     }
 

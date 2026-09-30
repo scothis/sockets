@@ -29,14 +29,14 @@ fn with_ranges(f: impl FnOnce(&Ranges) -> Decision) -> Result<Decision, ErrorCod
 }
 
 /// Decide whether traffic may originate to the remote address. Return traffic to an established
-/// peer is abstained without consulting the ranges.
+/// peer is deferred without consulting the ranges.
 fn authorize(
     remote_address: Result<IpSocketAddress, WasiErrorCode>,
     established: bool,
 ) -> Result<Decision, ErrorCode> {
     with_ranges(|ranges| {
         if established {
-            return Decision::Abstained;
+            return Decision::Deferred;
         }
         match remote_address.map(SocketAddr::from) {
             // outbound traffic matches the remote port it is sent to
@@ -80,7 +80,7 @@ impl Latch for CidrEgressLatch {
                 };
                 authorize(remote_address, established)
             }
-            _ => Ok(Decision::Abstained),
+            _ => Ok(Decision::Deferred),
         }
     }
 
@@ -88,7 +88,7 @@ impl Latch for CidrEgressLatch {
         // only a datagram the final decision allows reaches the guest, a denial from any latch
         // means there is nothing to reply to
         if let (
-            Decision::Abstained,
+            Decision::Deferred,
             Operation::UdpSocket(UdpSocketOperation::Receive((
                 udp_socket,
                 udp_socket_receive_returns,

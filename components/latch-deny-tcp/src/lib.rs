@@ -6,7 +6,7 @@ impl Latch for DenyTcpLatch {
     fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
         match operation {
             Operation::TcpSocket(_) => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
-            _ => Ok(Decision::Abstained),
+            _ => Ok(Decision::Deferred),
         }
     }
 

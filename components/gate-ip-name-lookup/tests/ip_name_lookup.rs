@@ -2,7 +2,7 @@ use test_harness::bindings::exports::wasi::sockets::ip_name_lookup::ErrorCode;
 use test_harness::{Harness, HostLatch, LogEntry, Observation};
 
 #[tokio::test(flavor = "multi_thread")]
-async fn resolve_addresses_abstained() -> wasmtime::Result<()> {
+async fn resolve_addresses_deferred() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-ip-name-lookup").build().await?;
     let result = gate
         .run(async |accessor, gate| {

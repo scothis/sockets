@@ -81,7 +81,7 @@ impl Config {
     fn decide(&self, observed: u64) -> Decision {
         match sample(self.seed, observed) < self.probability {
             true => Decision::Denied(self.reason.clone()),
-            false => Decision::Abstained,
+            false => Decision::Deferred,
         }
     }
 }

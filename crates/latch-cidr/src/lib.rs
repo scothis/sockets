@@ -13,7 +13,7 @@ use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 pub enum Action {
     // ordered so that deny sorts first when ranges are equally specific
     Deny,
-    Abstain,
+    Defer,
 }
 
 /// The sockets error code a denial is reported with.
@@ -192,7 +192,7 @@ fn canonical_network(network: IpNet) -> IpNet {
     }
 }
 
-/// `deny*` and `abstain*` CIDR ranges, with the `default` action and denial `reason`.
+/// `deny*` and `defer*` CIDR ranges, with the `default` action and denial `reason`.
 pub struct Ranges {
     /// most specific first
     rules: Vec<Rule>,
@@ -208,7 +208,7 @@ impl Ranges {
     pub fn parse(config: impl IntoIterator<Item = (String, String)>) -> Result<Ranges, String> {
         let mut rules: Vec<Rule> = vec![];
         let mut reason = Reason::AccessDenied;
-        let mut default = Action::Abstain;
+        let mut default = Action::Defer;
         let mut warnings = vec![];
 
         // only the last value for a key is used, earlier values are overridden
@@ -233,21 +233,21 @@ impl Ranges {
                 rules.extend(
                     Rule::parse(&value, Action::Deny, &mut value_warnings).map_err(invalid)?,
                 );
-            } else if key.starts_with("abstain") {
+            } else if key.starts_with("defer") {
                 rules.extend(
-                    Rule::parse(&value, Action::Abstain, &mut value_warnings).map_err(invalid)?,
+                    Rule::parse(&value, Action::Defer, &mut value_warnings).map_err(invalid)?,
                 );
             } else if key == "reason" {
                 reason = Reason::parse(value.clone());
             } else if key == "default" {
                 default = match value.as_str() {
                     "deny" => Action::Deny,
-                    "abstain" => Action::Abstain,
-                    _ => return Err(invalid("expected 'deny' or 'abstain'".to_string())),
+                    "defer" => Action::Defer,
+                    _ => return Err(invalid("expected 'deny' or 'defer'".to_string())),
                 }
             } else {
                 value_warnings.push(
-                    "unknown key is ignored, expected a key starting with 'deny' or 'abstain', \
+                    "unknown key is ignored, expected a key starting with 'deny' or 'defer', \
                      'default' or 'reason'"
                         .to_string(),
                 );
@@ -327,7 +327,7 @@ mod latch {
         pub fn decision(&self, address: IpAddr, port: u16) -> Decision {
             match self.action(address, port) {
                 Action::Deny => Decision::Denied(self.reason().into()),
-                Action::Abstain => Decision::Abstained,
+                Action::Defer => Decision::Deferred,
             }
         }
     }
@@ -472,20 +472,20 @@ mod tests {
     #[test]
     fn ipv4_ranges_compare_as_ipv4_mapped_ipv6_ranges() {
         // 10.0.0.0/8 is ::ffff:10.0.0.0/104, more specific than ::/80
-        let prefix = ranges(&[("deny", "::/80"), ("abstain", "10.0.0.0/8")]);
-        assert_eq!(matching(&prefix, "10.1.2.3"), Some(Action::Abstain));
+        let prefix = ranges(&[("deny", "::/80"), ("defer", "10.0.0.0/8")]);
+        assert_eq!(matching(&prefix, "10.1.2.3"), Some(Action::Defer));
         assert_eq!(matching(&prefix, "11.1.2.3"), Some(Action::Deny));
 
         // 0.0.0.0/0 is ::ffff:0:0/96, more specific than ::/0
-        let all = ranges(&[("abstain", "::/0"), ("deny", "0.0.0.0/0")]);
+        let all = ranges(&[("defer", "::/0"), ("deny", "0.0.0.0/0")]);
         assert_eq!(matching(&all, "10.1.2.3"), Some(Action::Deny));
-        assert_eq!(matching(&all, "2001:db8::1"), Some(Action::Abstain));
+        assert_eq!(matching(&all, "2001:db8::1"), Some(Action::Defer));
     }
 
     #[test]
     fn mapped_and_ipv4_ranges_compare_by_ipv4_prefix() {
-        let ranges = ranges(&[("deny", "10.0.0.0/8"), ("abstain", "::ffff:10.1.0.0/112")]);
-        assert_eq!(matching(&ranges, "10.1.2.3"), Some(Action::Abstain));
+        let ranges = ranges(&[("deny", "10.0.0.0/8"), ("defer", "::ffff:10.1.0.0/112")]);
+        assert_eq!(matching(&ranges, "10.1.2.3"), Some(Action::Defer));
         assert_eq!(matching(&ranges, "10.2.3.4"), Some(Action::Deny));
     }
 
@@ -512,7 +512,7 @@ mod tests {
 
     #[test]
     fn unmatched_address_has_no_action() {
-        let ranges = ranges(&[("deny", "10.0.0.0/8"), ("abstain", "192.168.0.0/16")]);
+        let ranges = ranges(&[("deny", "10.0.0.0/8"), ("defer", "192.168.0.0/16")]);
         assert_eq!(matching(&ranges, "172.16.0.1"), None);
     }
 
@@ -520,30 +520,30 @@ mod tests {
     fn unrelated_keys_are_ignored() {
         let ranges = ranges(&[("other", "10.0.0.0/8")]);
         assert_eq!(matching(&ranges, "10.0.0.1"), None);
-        assert_eq!(action(&ranges, "10.0.0.1"), Action::Abstain);
+        assert_eq!(action(&ranges, "10.0.0.1"), Action::Defer);
     }
 
     #[test]
-    fn longer_prefix_abstain_overrides_shorter_deny() {
+    fn longer_prefix_defer_overrides_shorter_deny() {
         for config in [
-            [("deny", "10.0.0.0/8"), ("abstain", "10.1.0.0/16")],
-            [("abstain", "10.1.0.0/16"), ("deny", "10.0.0.0/8")],
+            [("deny", "10.0.0.0/8"), ("defer", "10.1.0.0/16")],
+            [("defer", "10.1.0.0/16"), ("deny", "10.0.0.0/8")],
         ] {
             let ranges = ranges(&config);
-            assert_eq!(matching(&ranges, "10.1.2.3"), Some(Action::Abstain));
+            assert_eq!(matching(&ranges, "10.1.2.3"), Some(Action::Defer));
             assert_eq!(matching(&ranges, "10.2.3.4"), Some(Action::Deny));
         }
     }
 
     #[test]
-    fn longer_prefix_deny_overrides_shorter_abstain() {
+    fn longer_prefix_deny_overrides_shorter_defer() {
         for config in [
-            [("abstain", "10.0.0.0/8"), ("deny", "10.1.0.0/16")],
-            [("deny", "10.1.0.0/16"), ("abstain", "10.0.0.0/8")],
+            [("defer", "10.0.0.0/8"), ("deny", "10.1.0.0/16")],
+            [("deny", "10.1.0.0/16"), ("defer", "10.0.0.0/8")],
         ] {
             let ranges = ranges(&config);
             assert_eq!(matching(&ranges, "10.1.2.3"), Some(Action::Deny));
-            assert_eq!(matching(&ranges, "10.2.3.4"), Some(Action::Abstain));
+            assert_eq!(matching(&ranges, "10.2.3.4"), Some(Action::Defer));
         }
     }
 
@@ -551,19 +551,19 @@ mod tests {
     fn nested_exceptions() {
         let ranges = ranges(&[
             ("deny-1", "10.0.0.0/8"),
-            ("abstain-1", "10.1.0.0/16"),
+            ("defer-1", "10.1.0.0/16"),
             ("deny-2", "10.1.2.3"),
         ]);
         assert_eq!(matching(&ranges, "10.2.0.1"), Some(Action::Deny));
-        assert_eq!(matching(&ranges, "10.1.0.1"), Some(Action::Abstain));
+        assert_eq!(matching(&ranges, "10.1.0.1"), Some(Action::Defer));
         assert_eq!(matching(&ranges, "10.1.2.3"), Some(Action::Deny));
     }
 
     #[test]
     fn deny_wins_when_equally_specific() {
         for config in [
-            [("deny", "10.0.0.0/8"), ("abstain", "10.0.0.0/8")],
-            [("abstain", "10.0.0.0/8"), ("deny", "10.0.0.0/8")],
+            [("deny", "10.0.0.0/8"), ("defer", "10.0.0.0/8")],
+            [("defer", "10.0.0.0/8"), ("deny", "10.0.0.0/8")],
         ] {
             let ranges = ranges(&config);
             assert_eq!(matching(&ranges, "10.1.2.3"), Some(Action::Deny));
@@ -574,7 +574,7 @@ mod tests {
     fn denies_with_access_denied_by_default() {
         let ranges = ranges(&[("deny", "10.0.0.0/8")]);
         assert_eq!(action(&ranges, "10.0.0.1"), Action::Deny);
-        assert_eq!(action(&ranges, "192.0.2.1"), Action::Abstain);
+        assert_eq!(action(&ranges, "192.0.2.1"), Action::Defer);
         assert_eq!(ranges.reason(), &Reason::AccessDenied);
     }
 
@@ -598,7 +598,7 @@ mod tests {
     #[test]
     fn reason_does_not_change_the_default() {
         let ranges = ranges(&[("reason", "invalid-argument")]);
-        assert_eq!(action(&ranges, "10.0.0.1"), Action::Abstain);
+        assert_eq!(action(&ranges, "10.0.0.1"), Action::Defer);
     }
 
     #[test]
@@ -614,15 +614,15 @@ mod tests {
     }
 
     #[test]
-    fn default_abstain() {
-        let ranges = ranges(&[("default", "abstain")]);
-        assert_eq!(action(&ranges, "10.0.0.1"), Action::Abstain);
+    fn default_defer() {
+        let ranges = ranges(&[("default", "defer")]);
+        assert_eq!(action(&ranges, "10.0.0.1"), Action::Defer);
     }
 
     #[test]
     fn matching_range_overrides_default() {
-        let ranges = ranges(&[("default", "deny"), ("abstain", "10.0.0.0/8")]);
-        assert_eq!(action(&ranges, "10.0.0.1"), Action::Abstain);
+        let ranges = ranges(&[("default", "deny"), ("defer", "10.0.0.0/8")]);
+        assert_eq!(action(&ranges, "10.0.0.1"), Action::Defer);
         assert_eq!(action(&ranges, "192.0.2.1"), Action::Deny);
     }
 
@@ -630,7 +630,7 @@ mod tests {
     fn unknown_default_is_invalid() {
         assert_eq!(
             parse(&[("default", "grant")]).err().unwrap(),
-            "KEY=default VALUE=grant ERROR=expected 'deny' or 'abstain'"
+            "KEY=default VALUE=grant ERROR=expected 'deny' or 'defer'"
         );
     }
 
@@ -707,11 +707,8 @@ mod tests {
     #[test]
     fn address_prefix_decides_before_ports() {
         // the /16 is more specific than the /8, even though the /8 has a port range
-        let ranges = ranges(&[("deny", "10.0.0.0/8:443"), ("abstain", "10.1.0.0/16")]);
-        assert_eq!(
-            matching_port(&ranges, "10.1.2.3", 443),
-            Some(Action::Abstain)
-        );
+        let ranges = ranges(&[("deny", "10.0.0.0/8:443"), ("defer", "10.1.0.0/16")]);
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 443), Some(Action::Defer));
         assert_eq!(matching_port(&ranges, "10.2.3.4", 443), Some(Action::Deny));
         assert_eq!(matching_port(&ranges, "10.2.3.4", 80), None);
     }
@@ -719,28 +716,22 @@ mod tests {
     #[test]
     fn fewer_ports_decide_for_equal_prefixes() {
         for config in [
-            [("abstain", "10.0.0.0/8"), ("deny", "10.0.0.0/8:443")],
-            [("deny", "10.0.0.0/8:443"), ("abstain", "10.0.0.0/8")],
+            [("defer", "10.0.0.0/8"), ("deny", "10.0.0.0/8:443")],
+            [("deny", "10.0.0.0/8:443"), ("defer", "10.0.0.0/8")],
         ] {
             let ranges = ranges(&config);
             assert_eq!(matching_port(&ranges, "10.1.2.3", 443), Some(Action::Deny));
-            assert_eq!(
-                matching_port(&ranges, "10.1.2.3", 80),
-                Some(Action::Abstain)
-            );
+            assert_eq!(matching_port(&ranges, "10.1.2.3", 80), Some(Action::Defer));
         }
 
-        let ranges = ranges(&[("deny", "10.0.0.0/8:1-1024"), ("abstain", "10.0.0.0/8:22")]);
-        assert_eq!(
-            matching_port(&ranges, "10.1.2.3", 22),
-            Some(Action::Abstain)
-        );
+        let ranges = ranges(&[("deny", "10.0.0.0/8:1-1024"), ("defer", "10.0.0.0/8:22")]);
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 22), Some(Action::Defer));
         assert_eq!(matching_port(&ranges, "10.1.2.3", 80), Some(Action::Deny));
     }
 
     #[test]
     fn deny_wins_for_equal_prefixes_and_ports() {
-        let ranges = ranges(&[("abstain", "10.0.0.0/8:443"), ("deny", "10.0.0.0/8:443")]);
+        let ranges = ranges(&[("defer", "10.0.0.0/8:443"), ("deny", "10.0.0.0/8:443")]);
         assert_eq!(matching_port(&ranges, "10.1.2.3", 443), Some(Action::Deny));
     }
 
@@ -777,16 +768,16 @@ mod tests {
     #[test]
     fn port_list_entries_are_separate_rules() {
         // each entry is as specific as its own ports, the single port is more specific than the
-        // abstained range while the wide range in the same list is less specific
+        // deferred range while the wide range in the same list is less specific
         let ranges = ranges(&[
             ("deny", "10.0.0.0/8:22,1000-2000"),
-            ("abstain", "10.0.0.0/8:1500-1600"),
+            ("defer", "10.0.0.0/8:1500-1600"),
         ]);
         assert_eq!(matching_port(&ranges, "10.1.2.3", 22), Some(Action::Deny));
         assert_eq!(matching_port(&ranges, "10.1.2.3", 1000), Some(Action::Deny));
         assert_eq!(
             matching_port(&ranges, "10.1.2.3", 1500),
-            Some(Action::Abstain)
+            Some(Action::Defer)
         );
     }
 
@@ -811,11 +802,8 @@ mod tests {
     #[test]
     fn ports_without_address_are_the_least_specific_address() {
         // any range with an address is more specific, regardless of its ports
-        let ranges = ranges(&[("deny", ":22"), ("abstain", "10.0.0.0/8")]);
-        assert_eq!(
-            matching_port(&ranges, "10.1.2.3", 22),
-            Some(Action::Abstain)
-        );
+        let ranges = ranges(&[("deny", ":22"), ("defer", "10.0.0.0/8")]);
+        assert_eq!(matching_port(&ranges, "10.1.2.3", 22), Some(Action::Defer));
         assert_eq!(matching_port(&ranges, "11.1.2.3", 22), Some(Action::Deny));
         assert_eq!(matching_port(&ranges, "11.1.2.3", 80), None);
     }
@@ -824,22 +812,22 @@ mod tests {
     #[test]
     fn readme_precedence_example() {
         let ranges = ranges(&[
-            ("abstain-1", "0.0.0.0/0:443"),
+            ("defer-1", "0.0.0.0/0:443"),
             ("deny-1", "10.0.0.0/8"),
-            ("abstain-2", "10.1.0.0/16"),
+            ("defer-2", "10.1.0.0/16"),
             ("deny-2", "10.1.2.3:22"),
             ("deny-3", ":25"),
         ]);
         for (address, port, expected) in [
-            ("192.0.2.1", 443, Action::Abstain),
+            ("192.0.2.1", 443, Action::Defer),
             ("192.0.2.1", 25, Action::Deny),
-            ("192.0.2.1", 80, Action::Abstain),
+            ("192.0.2.1", 80, Action::Defer),
             ("10.2.0.1", 443, Action::Deny),
-            ("10.1.0.1", 25, Action::Abstain),
+            ("10.1.0.1", 25, Action::Defer),
             ("10.1.2.3", 22, Action::Deny),
-            ("10.1.2.3", 80, Action::Abstain),
+            ("10.1.2.3", 80, Action::Defer),
             ("2001:db8::1", 25, Action::Deny),
-            ("2001:db8::1", 443, Action::Abstain),
+            ("2001:db8::1", 443, Action::Defer),
             ("::ffff:10.2.0.1", 443, Action::Deny),
         ] {
             assert_eq!(
@@ -861,9 +849,9 @@ mod tests {
             ranges.warnings(),
             [
                 "KEY=deni-1 VALUE=10.0.0.0/8 DETAIL=unknown key is ignored, expected a key \
-                 starting with 'deny' or 'abstain', 'default' or 'reason'",
+                 starting with 'deny' or 'defer', 'default' or 'reason'",
                 "KEY=Deny-2 VALUE=10.0.0.0/8 DETAIL=unknown key is ignored, expected a key \
-                 starting with 'deny' or 'abstain', 'default' or 'reason'",
+                 starting with 'deny' or 'defer', 'default' or 'reason'",
             ]
         );
     }
@@ -892,13 +880,13 @@ mod tests {
     fn duplicate_keys_use_the_last_value() {
         let ranges = ranges(&[
             ("deny-1", "10.0.0.0/8"),
-            ("abstain-1", "192.168.0.0/16"),
+            ("defer-1", "192.168.0.0/16"),
             ("deny-1", "172.16.0.0/12"),
         ]);
         // only the last deny-1 is active
         assert_eq!(matching(&ranges, "10.1.2.3"), None);
         assert_eq!(matching(&ranges, "172.16.1.2"), Some(Action::Deny));
-        assert_eq!(matching(&ranges, "192.168.1.2"), Some(Action::Abstain));
+        assert_eq!(matching(&ranges, "192.168.1.2"), Some(Action::Defer));
         assert_eq!(
             ranges.warnings(),
             [
@@ -926,7 +914,7 @@ mod tests {
     fn valid_config_has_no_warnings() {
         let ranges = ranges(&[
             ("deny", "10.0.0.0/8"),
-            ("abstain", "10.1.2.3"),
+            ("defer", "10.1.2.3"),
             ("deny-ports", ":22"),
             ("default", "deny"),
             ("reason", "invalid-argument"),

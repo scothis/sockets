@@ -9,13 +9,13 @@ impl Latch for DenyBindLatch {
         match operation {
             Operation::TcpSocket(tcp_socket_operation) => match tcp_socket_operation {
                 TcpSocketOperation::Bind(_) => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
-                _ => Ok(Decision::Abstained),
+                _ => Ok(Decision::Deferred),
             },
             Operation::UdpSocket(udp_socket_operation) => match udp_socket_operation {
                 UdpSocketOperation::Bind(_) => Ok(Decision::Denied(SocketsErrorCode::AccessDenied)),
-                _ => Ok(Decision::Abstained),
+                _ => Ok(Decision::Deferred),
             },
-            _ => Ok(Decision::Abstained),
+            _ => Ok(Decision::Deferred),
         }
     }
 

@@ -63,7 +63,7 @@ async fn udp_bind_denied_to_matching_range() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn bind_abstained_for_unmatched_range() -> wasmtime::Result<()> {
+async fn bind_deferred_for_unmatched_range() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
         .config("deny", "10.0.0.0/8")
@@ -92,7 +92,7 @@ async fn bind_restricted_by_local_port() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
         .config("default", "deny")
-        .config("abstain", "127.0.0.1:1024-65535")
+        .config("defer", "127.0.0.1:1024-65535")
         .build()
         .await?;
     let (allowed, privileged, any_port) = gate
@@ -110,7 +110,7 @@ async fn bind_restricted_by_local_port() -> wasmtime::Result<()> {
         .await?;
     assert!(allowed.is_ok());
     assert!(matches!(privileged, Err(ErrorCode::AccessDenied)));
-    // port 0 asks for any free port, it is not in the abstained port range
+    // port 0 asks for any free port, it is not in the deferred port range
     assert!(matches!(any_port, Err(ErrorCode::AccessDenied)));
     Ok(())
 }
@@ -120,7 +120,7 @@ async fn unspecified_address_is_not_covered_by_specific_ranges() -> wasmtime::Re
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
         .config("default", "deny")
-        .config("abstain", "127.0.0.1")
+        .config("defer", "127.0.0.1")
         .build()
         .await?;
     let (loopback_bind, unspecified_bind) = gate

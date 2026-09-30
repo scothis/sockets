@@ -12,7 +12,7 @@ use tokio::net::{TcpListener, TcpStream};
 use tokio::time::timeout;
 
 #[tokio::test(flavor = "multi_thread")]
-async fn create_abstained() -> wasmtime::Result<()> {
+async fn create_deferred() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types").build().await?;
     let result = gate
         .run(async |accessor, gate| {
@@ -129,7 +129,7 @@ async fn bind_denied_by_latch_component() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn connect_abstained() -> wasmtime::Result<()> {
+async fn connect_deferred() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
@@ -390,7 +390,7 @@ async fn listen_forwards_connections_from_multiple_listeners() -> wasmtime::Resu
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn send_abstained() -> wasmtime::Result<()> {
+async fn send_deferred() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
@@ -486,7 +486,7 @@ async fn send_latch_error() -> wasmtime::Result<()> {
             if auth.operation == "tcp-socket.send" {
                 Err(LatchErrorCode::Other(Some("boom".to_string())))
             } else {
-                Ok(Decision::Abstained)
+                Ok(Decision::Deferred)
             }
         }))
         .build()
@@ -513,7 +513,7 @@ async fn send_latch_error() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn receive_abstained() -> wasmtime::Result<()> {
+async fn receive_deferred() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
@@ -620,7 +620,7 @@ async fn decisions_are_observed() -> wasmtime::Result<()> {
         })
         .await?;
     assert!(matches!(bound, Err(ErrorCode::AccessDenied)));
-    // both abstained and denied decisions are passed back to the latch
+    // both deferred and denied decisions are passed back to the latch
     assert_eq!(
         gate.recorder().observations(),
         vec![
@@ -640,7 +640,7 @@ async fn decisions_are_observed() -> wasmtime::Result<()> {
 #[tokio::test(flavor = "multi_thread")]
 async fn observe_failure_fails_the_operation() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
-        .host_latch(HostLatch::abstain().fail_observe())
+        .host_latch(HostLatch::defer().fail_observe())
         .build()
         .await?;
     let result = gate

@@ -1,10 +1,10 @@
 use sockets_latch::{Decision, ErrorCode, Latch, Operation};
 
-struct AbstainAllLatch {}
+struct DeferAllLatch {}
 
-impl Latch for AbstainAllLatch {
+impl Latch for DeferAllLatch {
     fn authorize(_: Operation) -> Result<Decision, ErrorCode> {
-        Ok(Decision::Abstained)
+        Ok(Decision::Deferred)
     }
 
     fn observe_decision(_final_decision: Decision, _operation: Operation) -> Result<(), ErrorCode> {
@@ -13,4 +13,4 @@ impl Latch for AbstainAllLatch {
     }
 }
 
-sockets_latch::export!(AbstainAllLatch with_types_in sockets_latch::bindings);
+sockets_latch::export!(DeferAllLatch with_types_in sockets_latch::bindings);

@@ -21,7 +21,7 @@ async fn exports_gated_types_and_ip_name_lookup() -> wasmtime::Result<()> {
         })
         .await?;
     assert!(!created, "tcp-socket.create should be denied");
-    assert!(resolved, "resolve-addresses should be abstained");
+    assert!(resolved, "resolve-addresses should be deferred");
     // both gates consult the same latch
     assert_eq!(
         gate.recorder().operations()[..2],

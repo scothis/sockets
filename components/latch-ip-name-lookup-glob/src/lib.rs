@@ -20,7 +20,7 @@ const MATCH_OPTIONS: MatchOptions = MatchOptions {
 enum Action {
     // ordered so that deny sorts first when patterns are equally specific
     Deny,
-    Abstain,
+    Defer,
 }
 
 struct Rule {
@@ -102,21 +102,21 @@ impl Patterns {
     fn parse(config: Vec<(String, String)>) -> Result<Patterns, String> {
         let mut rules: Vec<Rule> = vec![];
         let mut reason = SocketsErrorCode::AccessDenied;
-        let mut default = Action::Abstain;
+        let mut default = Action::Defer;
 
         for (key, value) in config {
             let invalid = |err: String| format!("KEY={key} VALUE={value} ERROR={err}");
             if key.starts_with("deny") {
                 rules.push(Rule::new(&value, Action::Deny).map_err(invalid)?);
-            } else if key.starts_with("abstain") {
-                rules.push(Rule::new(&value, Action::Abstain).map_err(invalid)?);
+            } else if key.starts_with("defer") {
+                rules.push(Rule::new(&value, Action::Defer).map_err(invalid)?);
             } else if key == "reason" {
                 reason = get_error_code(value).unwrap_or(SocketsErrorCode::AccessDenied);
             } else if key == "default" {
                 default = match value.as_str() {
                     "deny" => Action::Deny,
-                    "abstain" => Action::Abstain,
-                    _ => return Err(invalid("expected 'deny' or 'abstain'".to_string())),
+                    "defer" => Action::Defer,
+                    _ => return Err(invalid("expected 'deny' or 'defer'".to_string())),
                 }
             }
         }
@@ -148,7 +148,7 @@ impl Patterns {
     fn decision(&self, action: Action) -> Decision {
         match action {
             Action::Deny => Decision::Denied(self.reason.clone()),
-            Action::Abstain => Decision::Abstained,
+            Action::Defer => Decision::Deferred,
         }
     }
 
@@ -174,9 +174,9 @@ impl Latch for GlobIpNameLookupLatch {
                 IpNameLookupOperation::ResolveAddresses(resolve_addresses_args) => {
                     Patterns::authorize(resolve_addresses_args.name)
                 }
-                IpNameLookupOperation::ResolveAddressesReturn(_) => Ok(Decision::Abstained),
+                IpNameLookupOperation::ResolveAddressesReturn(_) => Ok(Decision::Deferred),
             },
-            _ => Ok(Decision::Abstained),
+            _ => Ok(Decision::Deferred),
         }
     }
 
@@ -231,8 +231,8 @@ mod tests {
         format!("{:?}", Decision::Denied(reason))
     }
 
-    fn abstained() -> String {
-        format!("{:?}", Decision::Abstained)
+    fn deferred() -> String {
+        format!("{:?}", Decision::Deferred)
     }
 
     #[test]
@@ -276,7 +276,7 @@ mod tests {
 
     #[test]
     fn unmatched_name_has_no_action() {
-        let patterns = patterns(&[("deny", "*.com"), ("abstain", "*.org")]);
+        let patterns = patterns(&[("deny", "*.com"), ("defer", "*.org")]);
         assert_eq!(action(&patterns, "example.net"), None);
     }
 
@@ -284,30 +284,30 @@ mod tests {
     fn unrelated_keys_are_ignored() {
         let patterns = patterns(&[("other", "*.com")]);
         assert_eq!(action(&patterns, "apple.com"), None);
-        assert_eq!(decision(&patterns, "apple.com"), abstained());
+        assert_eq!(decision(&patterns, "apple.com"), deferred());
     }
 
     #[test]
-    fn more_specific_abstain_overrides_general_deny() {
+    fn more_specific_defer_overrides_general_deny() {
         for config in [
-            [("deny", "**.com"), ("abstain", "*.apple.com")],
-            [("abstain", "*.apple.com"), ("deny", "**.com")],
+            [("deny", "**.com"), ("defer", "*.apple.com")],
+            [("defer", "*.apple.com"), ("deny", "**.com")],
         ] {
             let patterns = patterns(&config);
-            assert_eq!(action(&patterns, "www.apple.com"), Some(Action::Abstain));
+            assert_eq!(action(&patterns, "www.apple.com"), Some(Action::Defer));
             assert_eq!(action(&patterns, "www.example.com"), Some(Action::Deny));
         }
     }
 
     #[test]
-    fn more_specific_deny_overrides_general_abstain() {
+    fn more_specific_deny_overrides_general_defer() {
         for config in [
-            [("abstain", "**.com"), ("deny", "*.apple.com")],
-            [("deny", "*.apple.com"), ("abstain", "**.com")],
+            [("defer", "**.com"), ("deny", "*.apple.com")],
+            [("deny", "*.apple.com"), ("defer", "**.com")],
         ] {
             let patterns = patterns(&config);
             assert_eq!(action(&patterns, "www.apple.com"), Some(Action::Deny));
-            assert_eq!(action(&patterns, "apple.com"), Some(Action::Abstain));
+            assert_eq!(action(&patterns, "apple.com"), Some(Action::Defer));
         }
     }
 
@@ -315,58 +315,58 @@ mod tests {
     fn nested_exceptions() {
         let patterns = patterns(&[
             ("deny-1", "**.com"),
-            ("abstain-1", "**.apple.com"),
+            ("defer-1", "**.apple.com"),
             ("deny-2", "secret.apple.com"),
         ]);
         assert_eq!(action(&patterns, "example.com"), Some(Action::Deny));
-        assert_eq!(action(&patterns, "www.apple.com"), Some(Action::Abstain));
+        assert_eq!(action(&patterns, "www.apple.com"), Some(Action::Defer));
         assert_eq!(action(&patterns, "secret.apple.com"), Some(Action::Deny));
     }
 
     #[test]
     fn labels_closer_to_the_root_are_more_significant() {
         // `apple` is a literal where the other pattern has a wildcard
-        let patterns = patterns(&[("deny", "www.*.com"), ("abstain", "*.apple.com")]);
-        assert_eq!(action(&patterns, "www.apple.com"), Some(Action::Abstain));
+        let patterns = patterns(&[("deny", "www.*.com"), ("defer", "*.apple.com")]);
+        assert_eq!(action(&patterns, "www.apple.com"), Some(Action::Defer));
     }
 
     #[test]
     fn literal_label_beats_wildcards() {
-        let star = patterns(&[("deny", "*.com"), ("abstain", "apple.com")]);
-        assert_eq!(action(&star, "apple.com"), Some(Action::Abstain));
+        let star = patterns(&[("deny", "*.com"), ("defer", "apple.com")]);
+        assert_eq!(action(&star, "apple.com"), Some(Action::Defer));
         assert_eq!(action(&star, "example.com"), Some(Action::Deny));
 
-        let partial = patterns(&[("deny", "app*.com"), ("abstain", "apple.com")]);
-        assert_eq!(action(&partial, "apple.com"), Some(Action::Abstain));
+        let partial = patterns(&[("deny", "app*.com"), ("defer", "apple.com")]);
+        assert_eq!(action(&partial, "apple.com"), Some(Action::Defer));
         assert_eq!(action(&partial, "application.com"), Some(Action::Deny));
     }
 
     #[test]
     fn partial_wildcard_beats_single_star() {
-        let patterns = patterns(&[("deny", "*.com"), ("abstain", "app*.com")]);
-        assert_eq!(action(&patterns, "apple.com"), Some(Action::Abstain));
+        let patterns = patterns(&[("deny", "*.com"), ("defer", "app*.com")]);
+        assert_eq!(action(&patterns, "apple.com"), Some(Action::Defer));
         assert_eq!(action(&patterns, "example.com"), Some(Action::Deny));
     }
 
     #[test]
     fn partial_wildcard_with_more_literals_wins() {
-        let patterns = patterns(&[("deny", "a*.com"), ("abstain", "app*.com")]);
-        assert_eq!(action(&patterns, "apple.com"), Some(Action::Abstain));
+        let patterns = patterns(&[("deny", "a*.com"), ("defer", "app*.com")]);
+        assert_eq!(action(&patterns, "apple.com"), Some(Action::Defer));
         assert_eq!(action(&patterns, "amazon.com"), Some(Action::Deny));
     }
 
     #[test]
     fn single_star_beats_double_star() {
-        let patterns = patterns(&[("deny", "**.com"), ("abstain", "*.com")]);
-        assert_eq!(action(&patterns, "apple.com"), Some(Action::Abstain));
+        let patterns = patterns(&[("deny", "**.com"), ("defer", "*.com")]);
+        assert_eq!(action(&patterns, "apple.com"), Some(Action::Defer));
         assert_eq!(action(&patterns, "www.apple.com"), Some(Action::Deny));
     }
 
     #[test]
     fn deny_wins_when_equally_specific() {
         for config in [
-            [("deny", "a*.com"), ("abstain", "*e.com")],
-            [("abstain", "*e.com"), ("deny", "a*.com")],
+            [("deny", "a*.com"), ("defer", "*e.com")],
+            [("defer", "*e.com"), ("deny", "a*.com")],
         ] {
             let patterns = patterns(&config);
             assert_eq!(action(&patterns, "apple.com"), Some(Action::Deny));
@@ -386,7 +386,7 @@ mod tests {
             decision(&patterns, "apple.com"),
             denied(SocketsErrorCode::AccessDenied)
         );
-        assert_eq!(decision(&patterns, "wikipedia.org"), abstained());
+        assert_eq!(decision(&patterns, "wikipedia.org"), deferred());
     }
 
     #[test]
@@ -413,7 +413,7 @@ mod tests {
     #[test]
     fn reason_does_not_change_the_default() {
         let patterns = patterns(&[("reason", "invalid-argument")]);
-        assert_eq!(decision(&patterns, "apple.com"), abstained());
+        assert_eq!(decision(&patterns, "apple.com"), deferred());
     }
 
     #[test]
@@ -431,15 +431,15 @@ mod tests {
     }
 
     #[test]
-    fn default_abstain() {
-        let patterns = patterns(&[("default", "abstain")]);
-        assert_eq!(decision(&patterns, "apple.com"), abstained());
+    fn default_defer() {
+        let patterns = patterns(&[("default", "defer")]);
+        assert_eq!(decision(&patterns, "apple.com"), deferred());
     }
 
     #[test]
     fn matching_pattern_overrides_default() {
-        let patterns = patterns(&[("default", "deny"), ("abstain", "*.com")]);
-        assert_eq!(decision(&patterns, "apple.com"), abstained());
+        let patterns = patterns(&[("default", "deny"), ("defer", "*.com")]);
+        assert_eq!(decision(&patterns, "apple.com"), deferred());
         assert_eq!(
             decision(&patterns, "wikipedia.org"),
             denied(SocketsErrorCode::AccessDenied)
@@ -450,7 +450,7 @@ mod tests {
     fn unknown_default_is_invalid() {
         assert_eq!(
             parse(&[("default", "grant")]).err().unwrap(),
-            "KEY=default VALUE=grant ERROR=expected 'deny' or 'abstain'"
+            "KEY=default VALUE=grant ERROR=expected 'deny' or 'defer'"
         );
     }
 

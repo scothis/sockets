@@ -28,10 +28,10 @@ async fn create_and_bind(gate: &mut TestSubject) -> wasmtime::Result<Result<(), 
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn abstentions_are_traced() -> wasmtime::Result<()> {
+async fn deferrals_are_traced() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
-        .host_latch(HostLatch::abstain())
+        .host_latch(HostLatch::defer())
         .build()
         .await?;
     assert!(create_and_bind(&mut gate).await?.is_ok());
@@ -40,11 +40,11 @@ async fn abstentions_are_traced() -> wasmtime::Result<()> {
         vec![
             LogEntry::trace(
                 "componentized-latch",
-                "Authorization DECISION=abstained OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY=IPv4"
+                "Authorization DECISION=deferred OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY=IPv4"
             ),
             LogEntry::trace(
                 "componentized-latch",
-                "Authorization DECISION=abstained OPERATION=wasi:sockets/types#tcp-socket.bind LOCAL-ADDRESS=127.0.0.1:0"
+                "Authorization DECISION=deferred OPERATION=wasi:sockets/types#tcp-socket.bind LOCAL-ADDRESS=127.0.0.1:0"
             ),
         ]
     );
@@ -104,7 +104,7 @@ async fn latch_errors_are_traced_and_returned() -> wasmtime::Result<()> {
 async fn observe_errors_are_returned() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
-        .host_latch(HostLatch::abstain().fail_observe())
+        .host_latch(HostLatch::defer().fail_observe())
         .build()
         .await?;
     let created = create_and_bind(&mut gate).await?;
@@ -115,7 +115,7 @@ async fn observe_errors_are_returned() -> wasmtime::Result<()> {
         traces(&gate),
         vec![LogEntry::trace(
             "componentized-latch",
-            "Authorization DECISION=abstained OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY=IPv4"
+            "Authorization DECISION=deferred OPERATION=wasi:sockets/types#tcp-socket.create ADDRESS-FAMILY=IPv4"
         ),]
     );
     Ok(())

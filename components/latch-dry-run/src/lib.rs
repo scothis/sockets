@@ -6,7 +6,7 @@ impl Latch for DryRunLatch {
     fn authorize(operation: Operation) -> Result<Decision, ErrorCode> {
         // the wrapped latch decides, its denials and errors are logged but never enforced
         match latch::authorize(&operation) {
-            Ok(Decision::Abstained) => {}
+            Ok(Decision::Deferred) => {}
             Ok(Decision::Denied(reason)) => {
                 sockets_latch::warn!("Dry run, would deny REASON={reason} {operation}");
             }
@@ -17,7 +17,7 @@ impl Latch for DryRunLatch {
                 );
             }
         }
-        Ok(Decision::Abstained)
+        Ok(Decision::Deferred)
     }
 
     fn observe_decision(final_decision: Decision, operation: Operation) -> Result<(), ErrorCode> {

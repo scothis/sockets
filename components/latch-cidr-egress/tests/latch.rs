@@ -16,10 +16,10 @@ async fn udp_send_denied_to_matching_range() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 
-    // aggregated with the host latch, which abstains from everything
+    // aggregated with the host latch, which defers everything
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
-        .host_latch(HostLatch::abstain())
+        .host_latch(HostLatch::defer())
         .config("deny", "127.0.0.0/8")
         .build()
         .await?;
@@ -79,7 +79,7 @@ async fn udp_send_denied_to_matching_range() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn udp_send_abstained_for_unmatched_range() -> wasmtime::Result<()> {
+async fn udp_send_deferred_for_unmatched_range() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(peer.local_addr()?);
 
@@ -159,7 +159,7 @@ async fn more_specific_range_decides() -> wasmtime::Result<()> {
 
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
-        .config("abstain", "127.0.0.1")
+        .config("defer", "127.0.0.1")
         .config("deny", "0.0.0.0/0")
         .build()
         .await?;
@@ -310,7 +310,7 @@ async fn tcp_connect_denied_to_matching_range() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn tcp_connect_abstained_for_unmatched_range() -> wasmtime::Result<()> {
+async fn tcp_connect_deferred_for_unmatched_range() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
@@ -370,7 +370,7 @@ async fn tcp_inbound_connections_are_not_restricted() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn udp_reply_to_received_peer_abstained() -> wasmtime::Result<()> {
+async fn udp_reply_to_received_peer_deferred() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let peer_address = ip_socket_address(peer.local_addr()?);
     // same host as the peer, but it has not sent anything to the guest
@@ -434,7 +434,7 @@ async fn udp_reply_to_received_peer_abstained() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn udp_reply_on_connected_socket_abstained() -> wasmtime::Result<()> {
+async fn udp_reply_on_connected_socket_deferred() -> wasmtime::Result<()> {
     let peer = UdpSocket::bind("127.0.0.1:0").await?;
     let peer_address = ip_socket_address(peer.local_addr()?);
 
@@ -496,7 +496,7 @@ async fn udp_receive_denied_by_aggregated_latch_is_not_return_traffic() -> wasmt
                 denied = true;
                 Ok(Decision::Denied(SocketsErrorCode::AccessDenied))
             } else {
-                Ok(Decision::Abstained)
+                Ok(Decision::Deferred)
             }
         }))
         .build()
@@ -542,14 +542,14 @@ async fn aggregated_latch_denial_passes_through() -> wasmtime::Result<()> {
     let listener = TcpListener::bind("127.0.0.1:0").await?;
     let address = ip_socket_address(listener.local_addr()?);
 
-    // a distinct reason shows the aggregated latch's decision is returned, the ranges would abstain
+    // a distinct reason shows the aggregated latch's decision is returned, the ranges would defer
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
         .host_latch(HostLatch::new(|auth| {
             if auth.operation == "tcp-socket.connect" {
                 Ok(Decision::Denied(SocketsErrorCode::InvalidArgument))
             } else {
-                Ok(Decision::Abstained)
+                Ok(Decision::Deferred)
             }
         }))
         .build()
@@ -596,7 +596,7 @@ async fn aggregated_latch_component() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
         .latch("latch-deny-connect")
-        .config("abstain", "127.0.0.0/8")
+        .config("defer", "127.0.0.0/8")
         .build()
         .await?;
     let (connected, sent) = gate
@@ -655,7 +655,7 @@ async fn ipv6_all_range_covers_ipv4() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn tcp_send_on_accepted_connection_abstained() -> wasmtime::Result<()> {
+async fn tcp_send_on_accepted_connection_deferred() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
         .config("default", "deny")
@@ -804,7 +804,7 @@ async fn config_mistakes_are_warned() -> wasmtime::Result<()> {
         vec![
             LogEntry::warn(
                 "componentized-latch",
-                "Config issue LATCH=latch-cidr-egress KEY=deni VALUE=10.0.0.0/8 DETAIL=unknown key is ignored, expected a key starting with 'deny' or 'abstain', 'default' or 'reason'"
+                "Config issue LATCH=latch-cidr-egress KEY=deni VALUE=10.0.0.0/8 DETAIL=unknown key is ignored, expected a key starting with 'deny' or 'defer', 'default' or 'reason'"
             ),
             LogEntry::warn(
                 "componentized-latch",

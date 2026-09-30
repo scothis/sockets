@@ -35,7 +35,7 @@ IPv6, IPv4-mapped addresses (`::ffff:0:0/96`) are matched by the IPv4 ranges:
 - `deny-ipv6-site-local`: deprecated site local, `fec0::/10`
 - `deny-ipv6-multicast`: `ff00::/8`
 
-Every other address is abstained, `default` and `reason` are not set.
+Every other address is deferred, `default` and `reason` are not set.
 
 ## Usage
 
@@ -66,14 +66,14 @@ export new local:latch-cidr-egress {
 
 With the overlay config:
 
-- an `abstain` range more specific than a denied range allows it, `abstain-db=10.1.2.3:5432` allows connecting to a database while the rest of `10.0.0.0/8` is denied, see the rule precedence of `latch-cidr-egress`
+- an `defer` range more specific than a denied range allows it, `defer-db=10.1.2.3:5432` allows connecting to a database while the rest of `10.0.0.0/8` is denied, see the rule precedence of `latch-cidr-egress`
 - a key with the same name replaces a range, `deny-ipv4-private-10=10.0.0.0/9` narrows the denied private range
-- `default=deny` denies everything that is not abstained, turning the config into an allow list
+- `default=deny` denies everything that is not deferred, turning the config into an allow list
 - `reason` sets the error code denied operations fail with
 
 ## Limitations
 
-- `overlay` replaces values, it cannot remove a key. To stop denying a range, replace its value with a narrower range, or allow parts of it with more specific `abstain` ranges. An `abstain` range with the same prefix and ports as a denied range ties with it, and ties are decided by `deny`, so it needs a longer prefix or fewer ports to take effect.
+- `overlay` replaces values, it cannot remove a key. To stop denying a range, replace its value with a narrower range, or allow parts of it with more specific `defer` ranges. An `defer` range with the same prefix and ports as a denied range ties with it, and ties are decided by `deny`, so it needs a longer prefix or fewer ports to take effect.
 - `deny-ipv6-ietf` denies `2001::/23` as a whole to cover Teredo, it also covers a few small IETF assignments that are globally reachable.
 - The ranges are for outbound traffic the guest originates. Binding and inbound traffic are restricted by `latch-cidr-bind` and `latch-cidr-ingress`, which read the same config format.
 

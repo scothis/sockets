@@ -75,7 +75,7 @@ async fn latch_errors_are_logged_not_enforced() -> wasmtime::Result<()> {
 async fn observe_errors_are_logged_not_enforced() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
-        .host_latch(HostLatch::abstain().fail_observe())
+        .host_latch(HostLatch::defer().fail_observe())
         .build()
         .await?;
     let created: Result<_, ErrorCode> = gate
@@ -96,10 +96,10 @@ async fn observe_errors_are_logged_not_enforced() -> wasmtime::Result<()> {
 }
 
 #[tokio::test(flavor = "multi_thread")]
-async fn abstentions_are_not_logged() -> wasmtime::Result<()> {
+async fn deferrals_are_not_logged() -> wasmtime::Result<()> {
     let mut gate = Harness::new("gate-types")
         .latch(LATCH)
-        .host_latch(HostLatch::abstain())
+        .host_latch(HostLatch::defer())
         .build()
         .await?;
     let bound = gate

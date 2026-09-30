@@ -37,13 +37,13 @@ Put wasi:sockets behind a latch. Each operation is authorized before it reaches 
 
 ### Latches
 
-Decide which socket operations are allowed. A latch abstains or denies, an operation proceeds unless a latch denies it.
+Decide which socket operations are allowed. A latch defers or denies, an operation proceeds unless a latch denies it.
 
 #### Blanket restrictions
 
 Deny a whole category of operations, without configuration.
 
-- [`latch-abstain-all`](./components/latch-abstain-all/): abstains from everything, allowing all operations
+- [`latch-defer-all`](./components/latch-defer-all/): defers everything, allowing all operations
 - [`latch-deny-all`](./components/latch-deny-all/): denies every operation
 - [`latch-deny-tcp`](./components/latch-deny-tcp/) / [`latch-deny-udp`](./components/latch-deny-udp/): denies all tcp or all udp operations
 - [`latch-deny-ipv4`](./components/latch-deny-ipv4/) / [`latch-deny-ipv6`](./components/latch-deny-ipv6/): denies all IPv4 or all IPv6 operations
