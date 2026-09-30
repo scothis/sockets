@@ -1,8 +1,8 @@
 //! Test harness for the gate, latch and trace components.
 //!
-//! A [`Harness`] instantiates a component (`lib/*.wasm`) with real
+//! A [`Harness`] instantiates a component (`target/components/*/*.wasm`) with real
 //! upstream sockets from wasmtime-wasi, a scripted [`HostLatch`], and captured
-//! `wasi:logging` output. Latch components from `lib/` can be installed in
+//! `wasi:logging` output. Latch components from `target/components/` can be installed in
 //! place of, or alongside, the host latch, they are composed into the component
 //! before it is instantiated. Values for `wasi:config/store` are shared by every
 //! component in the composition.
@@ -193,12 +193,12 @@ fn workspace_dir() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR")).join("../..")
 }
 
-/// Directory containing the built components.
-pub fn lib_dir() -> PathBuf {
-    workspace_dir().join("lib")
+/// Path containing the built component.
+pub fn component_path(name: &str) -> PathBuf {
+    workspace_dir().join(format!("target/components/{name}/{name}.wasm"))
 }
 
-/// Rebuild the named components in `lib/` with make, unless they were already built by this
+/// Rebuild the named components in `target/components/` with make, unless they were already built by this
 /// process.
 fn ensure_built(names: &[&str]) -> Result<()> {
     static BUILT: Mutex<Option<HashSet<String>>> = Mutex::new(None);
@@ -209,7 +209,7 @@ fn ensure_built(names: &[&str]) -> Result<()> {
     let targets: Vec<String> = names
         .iter()
         .filter(|name| !built.contains(**name))
-        .map(|name| format!("lib/{name}.wasm"))
+        .map(|name| format!("target/components/{name}/{name}.wasm"))
         .collect();
     if targets.is_empty() {
         return Ok(());
@@ -523,7 +523,7 @@ pub struct Harness {
 }
 
 impl Harness {
-    /// Test the named component from `lib/`, e.g. `gate`.
+    /// Test the named component from `target/components/`, e.g. `gate`.
     pub fn new(component_name: &str) -> Self {
         Self {
             subject: component_name.to_string(),
@@ -533,7 +533,7 @@ impl Harness {
         }
     }
 
-    /// Install a latch component from `lib/`.
+    /// Install a latch component from `target/components/`.
     ///
     /// Without latch components the host latch is the test subject's latch. A single latch
     /// component replaces it, unless the latch imports a latch, then it wraps the host latch.
@@ -627,7 +627,7 @@ impl Harness {
         ensure_built(&names)?;
 
         let read = |name: &str| {
-            let path = lib_dir().join(format!("{name}.wasm"));
+            let path = component_path(name);
             std::fs::read(&path).with_context(|| format!("failed to read {}", path.display()))
         };
 

@@ -3,7 +3,7 @@ SHELL := /bin/bash
 export RUST_BACKTRACE ?= 1
 export WASMTIME_BACKTRACE_DETAILS ?= 1
 
-# cli tools, pinned in tools/Cargo.toml and installed into target/tools, see `make tools`
+COMPONENTS_DIR := $(abspath target/components)
 TOOLS_DIR := $(abspath target/tools)
 export PATH := $(TOOLS_DIR)/bin:$(PATH)
 
@@ -19,8 +19,10 @@ all: components
 .PHONY: clean
 clean:
 	cargo clean
-	rm -rf lib/*.wasm
-	rm -rf lib/*.wasm.md
+
+.PHONY: clean-components
+clean-components:
+	rm -rf ${COMPONENTS_DIR}
 
 .PHONY: test
 test: components
@@ -50,68 +52,64 @@ endef
 $(foreach name,$(TOOLS),$(eval $(call INSTALL_TOOL,$(name))))
 
 .PHONY: components
-components: lib/interface.wasm $(foreach component,$(COMPONENTS),lib/$(component).wasm lib/$(component).debug.wasm)
+components: ${COMPONENTS_DIR}/interface.wasm $(foreach component,$(COMPONENTS),${COMPONENTS_DIR}/$(component)/$(component).wasm ${COMPONENTS_DIR}/$(component)/$(component).debug.wasm)
 
 define BUILD_COMPONENT
 
 .PHONY: components/$1
-components/$1: lib/$1.wasm lib/$1.debug.wasm
+components/$1: ${COMPONENTS_DIR}/$1/$1.wasm ${COMPONENTS_DIR}/$1/$1.debug.wasm
 
 ifneq ($(wildcard components/$1/$1.properties),)
 
-lib/$1.wasm: components/$1/$1.properties components/$1/README.md | $(call tool,static-config)
-	static-config -f components/$1/$1.properties -o lib/$1.wasm
-	cp components/$1/README.md lib/$1.wasm.md
+${COMPONENTS_DIR}/$1/$1.wasm: components/$1/$1.properties ${COMPONENTS_DIR}/$1/README.md | $(call tool,static-config)
+	static-config -f components/$1/$1.properties -o ${COMPONENTS_DIR}/$1/$1.wasm
 
-lib/$1.debug.wasm: components/$1/$1.properties components/$1/README.md | $(call tool,static-config)
-	static-config -f components/$1/$1.properties -o lib/$1.debug.wasm
-	cp components/$1/README.md lib/$1.debug.wasm.md
+${COMPONENTS_DIR}/$1/$1.debug.wasm: components/$1/$1.properties ${COMPONENTS_DIR}/$1/README.md | $(call tool,static-config)
+	static-config -f components/$1/$1.properties -o ${COMPONENTS_DIR}/$1/$1.debug.wasm
 
 else ifneq ($(wildcard components/$1/$1.wac),)
 
 # the local packages the composition instantiates, e.g. `new local:latch-n2 { ... }`
 WAC_DEPS_$1 := $$(shell grep -v '^\s*//' components/$1/$1.wac | grep -oE 'local:[a-z0-9-]+' | sed 's/^local://' | sort -u)
 
-lib/$1.wasm: components/$1/$1.wac components/$1/README.md $$(foreach component,$$(WAC_DEPS_$1),lib/$$(component).wasm) | $(call tool,wac-cli)
-	wac compose $$(foreach component,$$(WAC_DEPS_$1),-d local:$$(component)=lib/$$(component).wasm) -o lib/$1.wasm components/$1/$1.wac
-	cp components/$1/README.md lib/$1.wasm.md
+${COMPONENTS_DIR}/$1/$1.wasm: components/$1/$1.wac $$(foreach component,$$(WAC_DEPS_$1),$${COMPONENTS_DIR}/$$(component)/$$(component).wasm) ${COMPONENTS_DIR}/$1/README.md | $(call tool,wac-cli)
+	wac compose $$(foreach component,$$(WAC_DEPS_$1),-d local:$$(component)=$${COMPONENTS_DIR}/$$(component)/$$(component).wasm) -o ${COMPONENTS_DIR}/$1/$1.wasm components/$1/$1.wac
 
-lib/$1.debug.wasm: components/$1/$1.wac components/$1/README.md $$(foreach component,$$(WAC_DEPS_$1),lib/$$(component).debug.wasm) | $(call tool,wac-cli)
-	wac compose $$(foreach component,$$(WAC_DEPS_$1),-d local:$$(component)=lib/$$(component).debug.wasm) -o lib/$1.debug.wasm components/$1/$1.wac
-	cp components/$1/README.md lib/$1.debug.wasm.md
+${COMPONENTS_DIR}/$1/$1.debug.wasm: components/$1/$1.wac $$(foreach component,$$(WAC_DEPS_$1),$${COMPONENTS_DIR}/$$(component)/$$(component).debug.wasm) ${COMPONENTS_DIR}/$1/README.md | $(call tool,wac-cli)
+	wac compose $$(foreach component,$$(WAC_DEPS_$1),-d local:$$(component)=$${COMPONENTS_DIR}/$$(component)/$$(component).debug.wasm) -o ${COMPONENTS_DIR}/$1/$1.debug.wasm components/$1/$1.wac
 
 else ifneq ($(wildcard components/$1/$1.wkg),)
 
-lib/$1.wasm: components/$1/$1.wkg components/$1/README.md | $(call tool,wkg)
-	wkg oci pull $(shell cat components/$1/$1.wkg 2> /dev/null | head -1) -o lib/$1.wasm
-	cp components/$1/README.md lib/$1.wasm.md
+${COMPONENTS_DIR}/$1/$1.wasm: components/$1/$1.wkg ${COMPONENTS_DIR}/$1/README.md | $(call tool,wkg)
+	wkg oci pull $(shell cat components/$1/$1.wkg 2> /dev/null | head -1) -o ${COMPONENTS_DIR}/$1/$1.wasm
 
-lib/$1.debug.wasm: components/$1/$1.wkg components/$1/README.md | $(call tool,wkg)
-	wkg oci pull $(shell cat components/$1/$1.wkg  2> /dev/null | tail -1 2> /dev/null) -o lib/$1.debug.wasm
-	cp components/$1/README.md lib/$1.debug.wasm.md
+${COMPONENTS_DIR}/$1/$1.debug.wasm: components/$1/$1.wkg ${COMPONENTS_DIR}/$1/README.md | $(call tool,wkg)
+	wkg oci pull $(shell cat components/$1/$1.wkg  2> /dev/null | tail -1 2> /dev/null) -o ${COMPONENTS_DIR}/$1/$1.debug.wasm
 
 # cargo is checked last, other strategies may have a Cargo.toml for tests of non-rust sources
 else ifneq ($(wildcard components/$1/Cargo.toml),)
 
-lib/$1.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f) $(shell find crates -type f) | $(call tool,wasm-tools)
+${COMPONENTS_DIR}/$1/$1.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f) $(shell find crates -type f) ${COMPONENTS_DIR}/$1/README.md | $(call tool,wasm-tools)
 	cargo build -p $1 --target wasm32-unknown-unknown --release
-	wasm-tools component new target/wasm32-unknown-unknown/release/$(subst -,_,$1).wasm -o lib/$1.wasm
-	cp components/$1/README.md lib/$1.wasm.md
+	wasm-tools component new target/wasm32-unknown-unknown/release/$(subst -,_,$1).wasm -o ${COMPONENTS_DIR}/$1/$1.wasm
 
-lib/$1.debug.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f) $(shell find crates -type f) | $(call tool,wasm-tools)
+${COMPONENTS_DIR}/$1/$1.debug.wasm: Cargo.toml Cargo.lock components/wit/deps $(shell find components/$1 -type f) $(shell find crates -type f) ${COMPONENTS_DIR}/$1/README.md | $(call tool,wasm-tools)
 	cargo build --target wasm32-unknown-unknown -p $1
-	wasm-tools component new target/wasm32-unknown-unknown/debug/$(subst -,_,$1).wasm -o lib/$1.debug.wasm
-	cp components/$1/README.md lib/$1.debug.wasm.md
+	wasm-tools component new target/wasm32-unknown-unknown/debug/$(subst -,_,$1).wasm -o ${COMPONENTS_DIR}/$1/$1.debug.wasm
 
 endif
+
+${COMPONENTS_DIR}/$1/README.md: components/$1/README.md
+	@mkdir -p ${COMPONENTS_DIR}/$1
+	@cp components/$1/README.md ${COMPONENTS_DIR}/$1/README.md
 
 endef
 
 $(foreach component,$(COMPONENTS),$(eval $(call BUILD_COMPONENT,$(component))))
 
-lib/interface.wasm: wit/deps README.md | $(call tool,wkg)
-	wkg build -o lib/interface.wasm
-	cp README.md lib/interface.wasm.md
+${COMPONENTS_DIR}/interface.wasm: wit/deps README.md | $(call tool,wkg)
+	wkg build -o ${COMPONENTS_DIR}/interface.wasm
+	@cp README.md ${COMPONENTS_DIR}/README.md
 
 .PHONY: wit
 wit: wit/deps components/wit/deps
@@ -129,11 +127,17 @@ wit/deps: wkg.toml $(shell find wit -type f -name "*.wit" -not -path "deps") | $
 components/wit/deps: wit/deps components/wkg.toml $(shell find components/wit -type f -name "*.wit" -not -path "deps") | $(call tool,wkg)
 	( cd components && wkg fetch )
 
-.PHONY: publish ## Publish each component in the lib directory
-publish: $(shell find lib -maxdepth 1 -type f -name "*.wasm" -not -name "dep-*" -not -name "test-*" | sed -e 's:^lib/:publish-:g')
+# sign published components with cosign, `SIGN=false` to push without signing, e.g. to a local registry
+SIGN ?= true
 
-.PHONY: publish-%
-publish-%: | $(call tool,wkg)
+# the files that can be published, e.g. gate.wasm, published from target/components/gate/gate.wasm
+PUBLISH_FILES := interface.wasm $(foreach component,$(filter-out dep-% test-%,$(COMPONENTS)),$(component).wasm $(component).debug.wasm)
+
+.PHONY: publish ## Publish each component in the target/components directory
+publish: $(addprefix publish-,$(PUBLISH_FILES))
+
+.PHONY: $(addprefix publish-,$(PUBLISH_FILES))
+$(addprefix publish-,$(PUBLISH_FILES)): publish-%: | $(call tool,wkg)
 ifndef VERSION
 	$(error VERSION is undefined)
 endif
@@ -141,16 +145,20 @@ ifndef REPOSITORY
 	$(error REPOSITORY is undefined)
 endif
 	@$(eval FILE := $(@:publish-%=%))
-	@$(eval COMPONENT := $(if $(filter %.debug.wasm,$(FILE)),$(FILE:%.debug.wasm=%),$(FILE:%.wasm=%)))
+	@$(eval COMPONENT := $(patsubst %.wasm,%,$(patsubst %.debug.wasm,%,$(FILE))))
+# components are in a directory of their own, the interface is not, e.g. gate/gate.wasm and interface.wasm
+	@$(eval COMPONENT_FILE := $(if $(filter interface.wasm,$(FILE)),$(FILE),$(COMPONENT)/$(FILE)))
+	@$(eval README := ${COMPONENTS_DIR}/$(dir $(COMPONENT_FILE))README.md)
 	@$(eval TITLE := $(if $(filter %.debug.wasm,$(FILE)),$(COMPONENT) (debug),$(COMPONENT)))
-	@$(eval DESCRIPTION := $(shell head -n 3 "lib/${FILE}.md" | tail -n 1))
-	@$(eval REVISION := $(shell git rev-parse HEAD)$(shell git diff --quiet HEAD && echo "+dirty"))
+	@$(eval DESCRIPTION := $(shell head -n 3 "$(README)" | tail -n 1))
+	@$(eval REVISION := $(shell git rev-parse HEAD)$(shell git diff --quiet HEAD || echo "+dirty"))
 	@$(eval COMPONENT_VERSION := $(if $(filter %.debug.wasm,$(FILE)),${VERSION}+debug,${VERSION}))
 	@$(eval TAG := $(patsubst v%,%,$(subst +,_,$(COMPONENT_VERSION))))
 	@$(eval IMAGE := $(if $(filter interface.wasm,$(FILE)),${REPOSITORY}:${TAG},${REPOSITORY}/${COMPONENT}:${TAG}))
 
 	@echo "::group::${FILE} -> ${IMAGE}"
-	@DIGEST=$$( \
+	@set -o pipefail ; \
+	DIGEST=$$( \
 		wkg oci push \
 			--annotation "org.opencontainers.image.title=${TITLE}" \
 			--annotation "org.opencontainers.image.description=${DESCRIPTION}" \
@@ -159,10 +167,10 @@ endif
 			--annotation "org.opencontainers.image.revision=${REVISION}" \
 			--annotation "org.opencontainers.image.licenses=Apache-2.0" \
 			"${IMAGE}" \
-			"lib/${FILE}" \
+			"${COMPONENTS_DIR}/${COMPONENT_FILE}" \
 			2>&1 \
 			| tee /dev/stderr \
 			| grep -o 'sha256:[a-f0-9]\{64\}' \
-	) ; \
-	cosign sign --yes "${IMAGE}@$${DIGEST}"
+	) && \
+	$(if $(filter true,$(SIGN)),cosign sign --yes "${IMAGE}@$${DIGEST}",echo "Not signing ${IMAGE}@$${DIGEST}, SIGN=${SIGN}")
 	@echo "::endgroup::"
