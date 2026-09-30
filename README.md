@@ -74,11 +74,12 @@ Build a policy from several latches, apply a latch to only part of the traffic, 
 
 ### Tracing
 
-Log wasi:sockets calls, for debugging or auditing, without affecting them.
+Log wasi:sockets calls and latch decisions, for debugging or auditing, without affecting them.
 
 - [`trace`](./components/trace/): traces both tcp/udp sockets and ip-name-lookup
 - [`trace-types`](./components/trace-types/): traces tcp and udp sockets
 - [`trace-ip-name-lookup`](./components/trace-ip-name-lookup/): traces ip-name-lookup
+- [`latch-trace`](./components/latch-trace/): traces the decisions of a wrapped latch
 
 ## Build
 

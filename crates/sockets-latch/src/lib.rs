@@ -84,6 +84,14 @@ macro_rules! warn {
     };
 }
 
+/// Log a trace message from a latch, formatted like `format!`.
+#[macro_export]
+macro_rules! trace {
+    ($($arg:tt)*) => {
+        $crate::log($crate::bindings::wasi::logging::logging::Level::Trace, &format!($($arg)*))
+    };
+}
+
 /// Load the latch's config from `wasi:config/store` and parse it.
 ///
 /// When the config cannot be read or parsed, the cause is logged and an `invalid-config` error
