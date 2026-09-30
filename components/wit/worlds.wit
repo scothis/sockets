@@ -43,3 +43,7 @@ world traced-types {
     import wasi:sockets/types@0.3.0;
     export wasi:sockets/types@0.3.0;
 }
+
+world insecure-random {
+    import wasi:random/insecure@0.3.0;
+}

@@ -9,6 +9,7 @@ A collection of utility components that remix wasi:sockets types and interfaces.
     - [Name lookups](#name-lookups)
     - [Network ranges](#network-ranges)
     - [Combining latches](#combining-latches)
+    - [Fault injection](#fault-injection)
   - [Tracing](#tracing)
 - [Build](#build)
 - [Community](#community)
@@ -71,6 +72,12 @@ Build a policy from several latches, apply a latch to only part of the traffic, 
 - [`latch-n2`](./components/latch-n2/), [`latch-n3`](./components/latch-n3/), [`latch-n4`](./components/latch-n4/), [`latch-n5`](./components/latch-n5/): aggregate two to five latches, any latch can deny an operation
 - [`latch-delegate-tcp`](./components/latch-delegate-tcp/) / [`latch-delegate-udp`](./components/latch-delegate-udp/): apply a wrapped latch to only tcp or only udp operations
 - [`latch-dry-run`](./components/latch-dry-run/): log what a wrapped latch would deny without enforcing it, to roll out a policy
+
+#### Fault injection
+
+Deny operations on purpose, to prove a component is resilient to failures in a hostile environment.
+
+- [`latch-deny-random`](./components/latch-deny-random/): randomly denies a configurable fraction of operations, reproducible with a seed
 
 ### Tracing
 

@@ -1060,6 +1060,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "latch-deny-random"
+version = "0.1.0"
+dependencies = [
+ "sockets-latch",
+ "test-harness",
+ "tokio",
+ "wasmtime",
+ "wit-bindgen",
+]
+
+[[package]]
 name = "latch-deny-tcp"
 version = "0.1.0"
 dependencies = [
