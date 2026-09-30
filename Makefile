@@ -108,6 +108,7 @@ endef
 $(foreach component,$(COMPONENTS),$(eval $(call BUILD_COMPONENT,$(component))))
 
 ${COMPONENTS_DIR}/interface.wasm: wit/deps README.md | $(call tool,wkg)
+	@mkdir -p ${COMPONENTS_DIR}
 	wkg build -o ${COMPONENTS_DIR}/interface.wasm
 	@cp README.md ${COMPONENTS_DIR}/README.md
 
