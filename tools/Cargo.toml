@@ -13,7 +13,7 @@ publish = false
 path = "lib.rs"
 
 [dependencies]
-static-config = "=0.2.0"
+static-config = "=0.2.1"
 wac-cli = "=0.11.0"
 wasm-tools = "=1.259.0"
 wkg = "=0.16.1"
