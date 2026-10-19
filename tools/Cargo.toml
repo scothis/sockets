@@ -15,7 +15,7 @@ path = "lib.rs"
 [dependencies]
 static-config = "=0.2.0"
 wac-cli = "=0.11.0"
-wasm-tools = "=1.259.0"
+wasm-tools = "=1.262.0"
 wkg = "=0.16.1"
 
 # not a member of the repository's workspace
